@@ -1,5 +1,10 @@
 import os
 import sys
+import logging
+import pathlib
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import argparse
 import yaml
 import pprint
@@ -11,6 +16,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import torch
+
 import matplotlib.pyplot as plt
 
 from model import VGAE, VGAEncoder, InnerProductDecoder
@@ -20,25 +26,26 @@ from src.batch_loader import BatchLoader
 from src.registry import TRAIN_REGISTRY
 from src.utils import *
 
-import pathlib
+
+# Configs
+
 DIR = pathlib.Path(__file__).parent.resolve()
 PLOT_DIR = DIR / "plots"
 
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-import logging
-
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 
 logging.basicConfig(
-    filename='train.log',
+    filename=DIR / 'train.log',
     filemode='w',
     level=logging.DEBUG,
     datefmt='%m-%d %H:%M:%S',
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
 )
-logging.info("Running Urban Planning")
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # ch = logging.StreamHandler()
@@ -56,6 +63,11 @@ with open(args.config, "r") as f:
 logger.info("Configuration:")
 logger.info(pprint.pformat(cfg))
 
+
+
+###### MAIN #####
+
+
 # Prepare the data
 graph_loader = GraphLoader(cfg)
 graph_data = graph_loader.load()
@@ -63,6 +75,10 @@ graph_data = graph_loader.load()
 # Split the data into train/val/test sets
 train_val_test_split = random_link_split(cfg)
 train_data, val_data, test_data = train_val_test_split(graph_data)
+
+logger.debug(f"Train: {train_data}")
+logger.debug(f"Val: {val_data}")
+logger.debug(f"Test: {test_data}")
 
 # batch loader
 batch_loader = BatchLoader(cfg)
@@ -88,7 +104,7 @@ model = VGAE(
 ).to(device)
 
 model.summary()
-optimizer = torch.optim.Adam(model.parameters(), lr=cfg['learning_rate'])
+optimizer = torch.optim.AdamW(model.parameters(), lr=cfg['learning_rate'], weight_decay=cfg['weight_decay'])
 
 ################################################################################################
 ############################                TRAIN                ###############################
@@ -119,6 +135,7 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
     ## Training
     model.train()
+
     for batch in train_loader:
         optimizer.zero_grad() # Zero gradients
         batch = batch.to(device)
@@ -127,7 +144,7 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
         positive_index = batch["user", "interacts", "item"].edge_label_index
         positive_labels = torch.ones(positive_index.size(1), dtype=torch.float32).to(device)
-
+        #logging.debug(f"Positive Index: {positive_index}")
         if sampling_strategy == "batch_random":
             negative_index, negative_labels = batch_random_sample(batch, cfg['negative_sampling_ratio'])
             negative_index = negative_index.to(device)
@@ -138,6 +155,9 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
         preds = torch.cat([pos_preds, neg_preds])
         edge_labels = torch.cat([positive_labels, negative_labels])
+
+        # logger.info(f"Pred: {preds}")
+        # logger.info(f"Edge Labels: {edge_labels}")
 
         ## Store the prediction
         all_preds.append(preds)
@@ -150,6 +170,7 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
         # Store the loss
         total_loss += loss.item()
+        total_loss_recon += loss_recon.item()
         total_loss_kl += loss_kl.item()
         
         # Loss backward
@@ -161,12 +182,16 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
     # Evaluation
     if epoch % cfg['eval_interval'] == 0:
         ## Train data
+        total_loss = total_loss / len(train_loader)
+        total_loss_recon = total_loss_recon / len(train_loader)
+        total_loss_kl = total_loss_kl / len(train_loader)
+
         y_scores, y_true = torch.cat(all_preds), torch.cat(all_labels)
         auc_score = compute_auc(y_scores, y_true)
         avg_precision = compute_average_precision(y_scores, y_true)
-        history["train"]["loss"].append(total_loss / len(train_loader))
-        history["train"]["loss_recon"].append(total_loss_recon / len(train_loader))
-        history["train"]["loss_kl"].append(total_loss_kl / len(train_loader))
+        history["train"]["loss"].append(total_loss)
+        history["train"]["loss_recon"].append(total_loss_recon)
+        history["train"]["loss_kl"].append(total_loss_kl)
         history["train"]["auc"].append(auc_score)
         history["train"]["average_precision"].append(avg_precision)
 
@@ -178,7 +203,7 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         history["val"]["auc"].append(val_metrics["auc"])
         history["val"]["average_precision"].append(val_metrics["average_precision"])
 
-        logger.info(f"\nTrain. Total Loss: {total_loss:.2f}, Rec.: {total_loss_recon:.2f}, KL: {total_loss_kl:.2f}, AUC: {auc_score:.2%}, AP: {avg_precision:.2%}")
+        logger.info(f"Train. Total Loss: {total_loss:.2f}, Rec.: {total_loss_recon:.2f}, KL: {total_loss_kl:.2f}, AUC: {auc_score:.2%}, AP: {avg_precision:.2%}")
         logger.info(f"Val. Total Loss: {val_metrics['loss']:.2f}, Rec.: {val_metrics['loss_recon']:.2f}, KL: {val_metrics['loss_kl']:.2f}, AUC: {val_metrics['auc']:.2%}, AP: {val_metrics['average_precision']:.2%}")
 
     if val_metrics["loss"] < best_model_cfg["best_loss"]:
@@ -188,9 +213,9 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         best_model_cfg["auc"] = val_metrics["auc"]
         best_model_cfg["average_precision"] = val_metrics["average_precision"]
 
-if cfg["save_model"]:
-    torch.save(best_model_cfg["best_model"], "best_model.pth")
 
+if cfg["save_model"]:
+    torch.save(best_model_cfg["best_model"], DIR / "best_model.pth")
 
 
 ## Evaluation

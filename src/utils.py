@@ -3,6 +3,7 @@ import polars as pl
 import torch
 import torch_geometric.transforms as T
 import torch.nn.functional as F
+from torch.nn import BCEWithLogitsLoss
 from torchmetrics.classification import AveragePrecision, AUROC
 from torch_geometric.utils import negative_sampling
 
@@ -61,19 +62,29 @@ def validate_edge_indices(data):
 
 
 ## Loss
-def binary_recon_loss(preds, edge_labels):
+def binary_recon_loss(preds, edge_label):
     """
     Compute the binary reconstruction loss.
     It encourages the model to assign high scores to positive edges and low scores to negative edges.
     Formula: -log(pos_preds) - log(1 - neg_preds)
     """
-    pos_mask = edge_labels == 1
+    EPS = 1e-4
+
+    pos_mask = edge_label == 1
     pos_preds = preds[pos_mask]
     neg_preds = preds[~pos_mask]
 
-    pos_loss = -torch.log(pos_preds + 1e-15).mean()
-    neg_loss = -torch.log(1 - neg_preds + 1e-15).mean()
+    pos_loss = -torch.log(pos_preds + EPS).mean()
+    neg_loss = -torch.log(1 - neg_preds + EPS).mean()
     return pos_loss + neg_loss
+
+
+# def binary_recon_loss(preds, edge_label):
+#     # logging.debug(f"Preds: {preds}")
+#     # logging.debug(f"Edge Label: {edge_label}")
+
+#     loss_fn = torch.nn.BCEWithLogitsLoss()
+#     return loss_fn(preds, edge_label)
 
 def kl_loss(mu, logvar):
     """
@@ -90,28 +101,36 @@ def kl_loss(mu, logvar):
 def batch_random_sample(batch_data, negative_sampling_ratio):
     "Randomly sample negative examples from the batch dataset"
     num_neg_samples = int(len(batch_data['user', 'interacts', 'item'].edge_label_index[0]) * negative_sampling_ratio)
+    #logger.info(f"Number of negative samples: {num_neg_samples}")
     edge_label_index = batch_data['user', 'interacts', 'item'].edge_label_index
     negative_samples = negative_sampling(edge_label_index, num_neg_samples=num_neg_samples)
-    return negative_samples, torch.zeros(num_neg_samples, dtype=torch.float32)
+    return negative_samples, torch.zeros(negative_samples.size(1), dtype=torch.float32)
 
+
+# def graph_random_sample(data, num_neg_samples, negative_sampling_ratio):
+#     "Randomly sample negative examples from the graph dataset"
+#     if not num_neg_samples:
+#         num_neg_samples = int(len(data['user', 'interacts', 'item'].edge_label_index[0]) * negative_sampling_ratio)
+#     edge_label_index = data['user', 'interacts', 'item'].edge_index
+#     negative_samples = negative_sampling(edge_label_index, num_neg_samples=num_neg_samples)
+#     return negative_samples, torch.zeros(num_neg_samples, dtype=torch.float32)
 
 
 ## Metrics
 def compute_auc(y_scores, y_true):
-    y_true = y_true.long() 
+    y_true = y_true.long()
+    y_scores = torch.sigmoid(y_scores)  # Apply sigmoid to logits
     score = AUROC(task="binary")(y_scores, y_true).item()
     return score
 
 def compute_average_precision(y_scores, y_true):
-    y_true = y_true.long() 
+    y_true = y_true.long()
+    y_scores = torch.sigmoid(y_scores)  # Apply sigmoid to logits
     score = AveragePrecision(task="binary")(y_scores, y_true).item()
     return score
 
 
-
 ## Evaluation
-
-
 @torch.no_grad()
 def batch_evaluate(loader, model, sampling_strategy = "batch_random"):
     total_loss = 0
@@ -126,7 +145,7 @@ def batch_evaluate(loader, model, sampling_strategy = "batch_random"):
         z, mu, logvar = model(batch)
         positive_index = batch["user", "interacts", "item"].edge_label_index
         positive_labels = torch.ones(positive_index.size(1), dtype=torch.float32)
-
+        
         if sampling_strategy == "batch_random":
             negative_index, negative_labels = batch_random_sample(batch)
 
@@ -142,7 +161,7 @@ def batch_evaluate(loader, model, sampling_strategy = "batch_random"):
         loss_kl = kl_loss(mu, logvar)
 
         loss = loss_recon + loss_kl
-        
+
         total_loss += loss.item()
         total_loss_recon += loss_recon.item()
         total_loss_kl += loss_kl.item()
@@ -173,15 +192,15 @@ def evaluate(data, model):
 
     preds = torch.cat([pos_preds, neg_preds])
 
-    loss_recon = binary_recon_loss(preds, data)
+    loss_recon = binary_recon_loss(preds, edge_label)
     loss_kl = kl_loss(mu, logvar)
     loss = loss_recon + loss_kl
 
     auc = compute_auc(preds, edge_label)
     avg_precision = compute_average_precision(preds, edge_label)
-    return { "loss": loss,
-            "loss_recon": loss_recon,
-            "loss_kl": loss_kl,
+    return { "loss": loss.item(),
+            "loss_recon": loss_recon.item(),
+            "loss_kl": loss_kl.item(),
             "auc": auc,
             "average_precision": avg_precision }
 

@@ -3,7 +3,7 @@ import pprint
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, SAGEConv, VGAE, BatchNorm
+from torch_geometric.nn import GCNConv, SAGEConv, VGAE, GATConv, BatchNorm
 
 from torchsummary import summary
 
@@ -16,18 +16,18 @@ GNN_LAYER_REGISTRY = {
     "gcn_conv": GCNConv,
     "sage_conv": SAGEConv,
     "vgae": VGAE,
+    "gat_conv": GATConv
 }
 
 class VGAE(nn.Module):
     def __init__(self,data,encoder,decoder,cfg):
         """
-        gnn_layer_cls: class of the GNN layer (e.g., GCNConv, SAGEConv)
-        encoder_cls: class of the encoder (should accept gnn_layer_cls, in_channels, hidden_channels, latent_dim)
-        decoder_cls: class of the decoder (should accept no arguments)
-        in_channels: input feature dimension
-        hidden_channels: hidden layer dimension
-        latent_dim: latent space dimension
-        encoder_kwargs: additional kwargs for encoder
+        Classical VGAE model
+        input: 
+            data = input data
+            encoder = encoder function
+            decoder = decoder function
+            cfg 
         """
         super().__init__()
         
@@ -87,6 +87,8 @@ class VGAE(nn.Module):
         logger.info("Decoder:")
         logger.info(pprint.pformat(self.decoder))
 
+
+
 class VGAEncoder(nn.Module):
     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
         """
@@ -96,22 +98,42 @@ class VGAEncoder(nn.Module):
         """
         super().__init__()
         GNNLayer = GNN_LAYER_REGISTRY[cfg['gnn_layer_cls']]
+        self.cfg = cfg
         self.convs = nn.ModuleList()
-        self.convs.append(GNNLayer(in_channels, hidden_channels))
+        self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
+        
+        if cfg['gnn_layer_cls'] == 'gat_conv':
+            self.convs.append(GNNLayer(in_channels, hidden_channels, heads=cfg['n_heads'], dropout=cfg['dropout']))
+        else:
+            self.convs.append(GNNLayer(in_channels, hidden_channels,))
+
+        if self.bns is not None:
+            self.bns.append(BatchNorm(hidden_channels))
+
         for _ in range(cfg['n_layer'] - 1):
-            self.convs.append(GNNLayer(hidden_channels, hidden_channels))
+            if cfg['gnn_layer_cls'] == 'gat_conv':
+                self.convs.append(GNNLayer(hidden_channels, hidden_channels, heads=cfg['n_heads'], dropout=cfg['dropout']))
+            else:
+                self.convs.append(GNNLayer(hidden_channels, hidden_channels))
+            if self.bns is not None:
+                self.bns.append(BatchNorm(hidden_channels))
+        
+        if cfg['gnn_layer_cls'] == 'gat_conv':
+            self.linears = nn.ModuleList([nn.Linear(cfg['n_heads'] * hidden_channels, hidden_channels) for _ in range(cfg['n_layer'])])
+
         self.conv_mu = GNNLayer(hidden_channels, latent_dim)
         self.conv_logvar = GNNLayer(hidden_channels, latent_dim)
         self.batch_norm = BatchNorm(hidden_channels) if cfg.get("batch_norm", False) else None
         self.skip = cfg.get('skip_connection', False)
 
     def forward(self, x, edge_index):
-        for conv in self.convs:
-            if self.skip:
-                x_res = x
+        for i, conv in enumerate(self.convs):
+            x_res = x if self.skip else None
             x = conv(x, edge_index)
-            if self.batch_norm:
-                x = self.batch_norm(x)
+            if self.cfg['gnn_layer_cls'] == 'gat_conv':
+                x = self.linears[i](x)
+            if self.bns is not None:
+                x = self.bns[i](x)
             x = F.leaky_relu(x)
             if self.skip:
                 x = x + x_res
