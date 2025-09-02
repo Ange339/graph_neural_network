@@ -1,0 +1,72 @@
+# Data directory
+dir: G:/My Drive/thesis/data_sample
+books_filename: books_filtered.parquet
+users_filename: users_filtered.parquet
+interactions_filename: interactions.parquet
+descriptions_filename: descriptions_filtered.parquet
+reviews_filename: reviews_filtered.parquet
+embeddings_descriptions_filename: embeddings_descriptions_sbert_pt.parquet
+embeddings_reviews_filename: embeddings_reviews_sbert_pt.parquet
+
+
+# Processing settings
+review_coreness_k: 3
+coreness_k: 10
+language_filter: True
+
+
+# Embedding feature strategies
+user_features:
+  - name: topo
+    features: ["degree", "coreness"]
+    degree_log_transform: true
+  - name: random
+    dim: 128
+    xavier_init: true
+  # - name: textual_reviews
+  #   aggr_fn: mean
+
+book_features:
+  - name: topo
+    features: ["degree", "coreness"]
+    degree_log_transform: true
+  - name: random
+    dim: 128
+    xavier_init: true
+  # - name: textual_desc
+  # - name: textual_reviews
+  #   aggr_fn: mean
+
+
+# Splitting settings
+seed: 42
+val_size: 0.1
+test_size: 0.1
+disjoint_train_ratio: 0.0 # set to 0.0 for transductive learning
+
+# Batch sampling settings
+batch_size: 128
+batch_method: "binary_link_neighbors"
+num_neighbors: [10, 10] # N_users, N_Items
+
+# Model hyperparameters
+hidden_channels: 128
+latent_dim: 64
+num_layers: 3
+n_layer: 1
+skip_connection: false
+batch_norm: false
+gnn_layer_cls: gcn_conv
+encoder: vgae_encoder
+decoder: inner_product_decoder
+emb_linear_transform: false
+
+# Training settings
+negative_sampling_method: "batch_random"
+negative_sampling_ratio: 1.0
+epochs: 0
+learning_rate: 0.001
+recon_loss: "binary"
+eval_interval: 2
+patience: 50
+save_model: true
