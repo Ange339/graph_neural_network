@@ -35,26 +35,6 @@ class TopologicalFeatures(FeatureExtractor):
         return torch.tensor(feats, dtype=torch.float32)
 
 
-class OneHotEncodedFeatures(FeatureExtractor):
-    def build(self, data, node_type):
-        "Generate one-hot encoding for graph nodes. Not Recommended"
-        n_nodes = data[node_type].shape[0]
-        return torch.eye(n_nodes)
-
-
-class RandomFeatures(FeatureExtractor):
-    def __init__(self, dim: int, xavier_init: bool = True):
-        self.dim = dim
-        self.xavier_init = xavier_init
-
-    def build(self, data, node_type: Literal["users", "books"]) -> torch.Tensor:
-        num_nodes = data[node_type].shape[0]
-        embedding = nn.Embedding(num_nodes, self.dim).weight
-        if self.xavier_init:
-            nn.init.xavier_uniform_(embedding)
-        return embedding
-
-
 class TextualDescriptionFeatures(FeatureExtractor):
     def __init__(self):
         pass

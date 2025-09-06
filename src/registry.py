@@ -1,18 +1,18 @@
 from torch_geometric.nn import GCNConv, SAGEConv, VGAE 
-
 from src.feature_extractor import *
 from model import *
 
 
 EMB_FEATURE_REGISTRY = {
     "topo": TopologicalFeatures,
-    "random": RandomFeatures,
     "textual_desc": TextualDescriptionFeatures,
     "textual_reviews": TextualReviewFeatures,
 }
 
 
-TRAIN_REGISTRY = {
-    "vgae_encoder": VGAEncoder,
+MODEL_REGISTRY = {
+    "sage_encoder": SageEncoder,
+    "gat_encoder": GATEncoder,
+    "gat_multihead_encoder": GATMultiheadEncoder,
     "inner_product_decoder": InnerProductDecoder,
 }

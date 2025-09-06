@@ -73,6 +73,12 @@ class Dataset:
         books = books.drop('book_id_hashed', strict=False)
         interactions = interactions.drop(['user_id_hashed', 'book_id_hashed'], strict=False)
 
+        edge_type = self.cfg.get("edge_type", "interactions")
+        logger.info(f"Edge type: {edge_type}")
+        if edge_type == "reads":
+            interactions = interactions.filter(pl.col('is_read') == True)
+
+
         logger.info(f"Initial size. Users: {len(users)}, Books: {len(books)}, Total: {len(users) + len(books)}, Edges: {len(interactions)}, Density: {len(interactions) / (len(users) * len(books)):4%}")
 
         # Filter by degree.
@@ -80,8 +86,10 @@ class Dataset:
         coreness_k = self.cfg.get("coreness_k", 3)
 
         users = users.filter(pl.col('review_coreness') >= review_coreness_k, pl.col('coreness') >= coreness_k)
-        books = books.filter(pl.col('review_coreness') >= review_coreness_k, pl.col('coreness') >= coreness_k)
+        users = users.join(interactions.select(["user_id"]).unique(), on="user_id", how="inner") # Keep only users with interactions
 
+        books = books.filter(pl.col('review_coreness') >= review_coreness_k, pl.col('coreness') >= coreness_k)
+        books = books.join(interactions.select(["book_id"]).unique(), on="book_id", how="inner") # Keep only books with interactions
 
         ## Reindexing
         users = users.with_columns((pl.col('user_id').rank()-1).cast(pl.Int64).alias('user_id_hashed'))
@@ -224,8 +232,12 @@ class GraphBuilder():
         user_x, book_x = self.build_nodes_features(data)
         
         graph_data = HeteroData()
-        graph_data['user'].x = user_x
-        graph_data['item'].x = book_x # From now we will call it item
+        graph_data['user'].node_id = torch.arange(len(data['users']))
+        graph_data['item'].node_id = torch.arange(len(data['books']))
+        if user_x is not None:
+            graph_data['user'].x = user_x
+        if book_x is not None:
+            graph_data['item'].x = book_x # From now we will call it item
         graph_data[('user', 'interacts', 'item')].edge_index = edge_index
         graph_data = T.ToUndirected()(graph_data) # Convert to undirected
         return graph_data

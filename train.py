@@ -16,14 +16,16 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import torch
+from torch import optim
 
 import matplotlib.pyplot as plt
 
-from model import VGAE, VGAEncoder, InnerProductDecoder
-
+from model import *
 from src.data_loader import GraphLoader
 from src.batch_loader import BatchLoader
-from src.registry import TRAIN_REGISTRY
+from src.sampling import NegativeSampler
+from src.loss import LossFunction
+from src.registry import MODEL_REGISTRY
 from src.utils import *
 
 
@@ -34,23 +36,24 @@ PLOT_DIR = DIR / "plots"
 
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
+# if __name__ == "__main__":
+#     for handler in logging.root.handlers[:]:
+#         logging.root.removeHandler(handler)
 
-logging.basicConfig(
-    filename=DIR / 'train.log',
-    filemode='w',
-    level=logging.DEBUG,
-    datefmt='%m-%d %H:%M:%S',
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-)
+#     logging.basicConfig(
+#         filename=DIR / 'train.log',
+#         filemode='w',
+#         level=logging.DEBUG,
+#         datefmt='%m-%d %H:%M:%S',
+#         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+#     )
+
+logging.basicConfig(level=logging.INFO)
+
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ch = logging.StreamHandler()
-# ch.setLevel(logging.INFO) # or any other level
-# logger.addHandler(ch)
 
 # Parser
 parser = argparse.ArgumentParser(description="Load parquet datasets")
@@ -91,25 +94,33 @@ train_loader = batch_loader.load(train_data, shuffle=True)
 ################################################################################################
 ############################                MODEL                ###############################
 ################################################################################################
+
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 val_data = val_data.to(device)
 test_data = test_data.to(device)
 
-model = VGAE(
+encoder = MODEL_REGISTRY.get(cfg['encoder'], SageEncoder)
+decoder = MODEL_REGISTRY.get(cfg['decoder'], InnerProductDecoder)
+
+model = GAE(
     data=train_data,
-    encoder=TRAIN_REGISTRY.get(cfg['encoder'], VGAEncoder),
-    decoder=TRAIN_REGISTRY.get(cfg['decoder'], InnerProductDecoder),
+    encoder=encoder,
+    decoder=decoder,
     cfg=cfg
 ).to(device)
 
-model.summary()
-optimizer = torch.optim.AdamW(model.parameters(), lr=cfg['learning_rate'], weight_decay=cfg['weight_decay'])
+
+logging.info("Model summary:")
+logging.info(pprint.pformat(model))
+
 
 ################################################################################################
 ############################                TRAIN                ###############################
 ################################################################################################
 
+# History
 history = {
     "train" : defaultdict(list),
     "val" : defaultdict(list),
@@ -117,14 +128,26 @@ history = {
 
 best_model_cfg = {
     "best_model": None,
-    "best_loss": float('inf'),
+    "loss": float('inf'),
     "epoch": 0,
     "auc": 0,
     "average_precision": 0
 }
 
-sampling_strategy = cfg.get('sampling_strategy', 'batch_random')
+## Optimizer
+optimizer = optim.AdamW(model.parameters(), lr=cfg['learning_rate'], weight_decay=cfg['weight_decay'])
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg['opt_decay_step'], gamma=cfg['opt_decay_rate'])
 
+## Sampling settings
+negative_sampler = NegativeSampler(cfg, device=device)
+
+## Loss functions
+loss_function = LossFunction(cfg)
+variational = cfg.get("variational", True)
+kl_beta = cfg.get("kl_beta", 1.0)
+kl_warmup_epoch = cfg.get("kl_warmup_epoch", 0)
+
+########### TRAINING LOOP ###########
 for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
     total_loss = 0
     total_loss_recon = 0
@@ -135,49 +158,58 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
     ## Training
     model.train()
+    num_positive = 0
+    num_negatives = 0
+
+    ## Beta warmup
+    if kl_warmup_epoch > 0 and epoch < kl_warmup_epoch:
+        kl_beta = (epoch / kl_warmup_epoch) * cfg.get("kl_beta", 1.0)
 
     for batch in train_loader:
-        optimizer.zero_grad() # Zero gradients
+        # Batch encoding
         batch = batch.to(device)
+        z_dict, mu_dict, logvar_dict = model(batch)
 
-        z, mu, logvar = model(batch)
-
+        # Edge sampling
+        ## Positive
         positive_index = batch["user", "interacts", "item"].edge_label_index
-        positive_labels = torch.ones(positive_index.size(1), dtype=torch.float32).to(device)
-        #logging.debug(f"Positive Index: {positive_index}")
-        if sampling_strategy == "batch_random":
-            negative_index, negative_labels = batch_random_sample(batch, cfg['negative_sampling_ratio'])
-            negative_index = negative_index.to(device)
-            negative_labels = negative_labels.to(device)
+        positive_labels = torch.ones(positive_index.size(1), dtype=torch.float32, device=device)
+        num_positive += positive_index.size(1)
 
-        pos_preds = model.decode(z, positive_index)
-        neg_preds = model.decode(z, negative_index)
+        ## Negative sampling
+        negative_index, negative_labels = negative_sampler.sample(batch)
+        num_negatives += negative_index.size(1)
 
+        # Model decoding
+        pos_preds = model.decode(z_dict['user'], z_dict['item'], positive_index)
+        neg_preds = model.decode(z_dict['user'], z_dict['item'], negative_index)
         preds = torch.cat([pos_preds, neg_preds])
         edge_labels = torch.cat([positive_labels, negative_labels])
 
-        # logger.info(f"Pred: {preds}")
-        # logger.info(f"Edge Labels: {edge_labels}")
-
-        ## Store the prediction
-        all_preds.append(preds)
-        all_labels.append(edge_labels)
-        
         ## Compute the loss
-        loss_recon = binary_recon_loss(preds, edge_labels)
-        loss_kl = kl_loss(mu, logvar)
+        loss_recon = loss_function.reconstruction_loss(preds, edge_labels)
+
+        if variational:
+            mu, logvar = torch.cat([mu_dict['user'], mu_dict['item']]), torch.cat([logvar_dict['user'], logvar_dict['item']])
+            loss_kl = loss_function.kl_loss(mu, logvar, beta=kl_beta)
+        else:
+            loss_kl = torch.tensor(0.0)
+
         loss = loss_recon + loss_kl
 
-        # Store the loss
-        total_loss += loss.item()
-        total_loss_recon += loss_recon.item()
-        total_loss_kl += loss_kl.item()
-        
         # Loss backward
+        optimizer.zero_grad() # Zero gradients
         loss.backward()
         optimizer.step()
 
-    logger.info(f"Epoch: {epoch}, Loss: {total_loss/len(train_loader):.2f}")
+        ## Store the information
+        all_preds.append(preds)
+        all_labels.append(edge_labels)
+        total_loss += loss.item()
+        total_loss_recon += loss_recon.item()
+        total_loss_kl += loss_kl.item()
+
+    scheduler.step() # Update learning rate
 
     # Evaluation
     if epoch % cfg['eval_interval'] == 0:
@@ -195,25 +227,31 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         history["train"]["auc"].append(auc_score)
         history["train"]["average_precision"].append(avg_precision)
 
-        ## Validation data
-        val_metrics = evaluate(val_data, model)
+        # Validation data
+        val_metrics = evaluate(val_data, model, loss_function, kl_beta=kl_beta, cfg=cfg)
         history["val"]["loss"].append(val_metrics["loss"])
         history["val"]["loss_recon"].append(val_metrics["loss_recon"])
         history["val"]["loss_kl"].append(val_metrics["loss_kl"])
         history["val"]["auc"].append(val_metrics["auc"])
         history["val"]["average_precision"].append(val_metrics["average_precision"])
 
+        logger.info(f"Epoch: {epoch}")
         logger.info(f"Train. Total Loss: {total_loss:.2f}, Rec.: {total_loss_recon:.2f}, KL: {total_loss_kl:.2f}, AUC: {auc_score:.2%}, AP: {avg_precision:.2%}")
         logger.info(f"Val. Total Loss: {val_metrics['loss']:.2f}, Rec.: {val_metrics['loss_recon']:.2f}, KL: {val_metrics['loss_kl']:.2f}, AUC: {val_metrics['auc']:.2%}, AP: {val_metrics['average_precision']:.2%}")
 
-    if val_metrics["loss"] < best_model_cfg["best_loss"]:
-        best_model_cfg["best_loss"] = val_metrics["loss"]
+        logger.debug(f"Num positive: {num_positive}; Num negatives: {num_negatives}; Negative Ratio: {num_negatives / (num_positive) + 1e-6:.2f}")
+
+    else:
+        logger.info(f"Epoch: {epoch}, Loss: {total_loss/len(train_loader):.2f}")
+
+    if val_metrics["auc"] > best_model_cfg["auc"]:
         best_model_cfg["best_model"] = model.state_dict()
+        best_model_cfg["loss"] = val_metrics["loss"]
         best_model_cfg["epoch"] = epoch
         best_model_cfg["auc"] = val_metrics["auc"]
         best_model_cfg["average_precision"] = val_metrics["average_precision"]
 
-
+# Save the best model
 if cfg["save_model"]:
     torch.save(best_model_cfg["best_model"], DIR / "best_model.pth")
 
@@ -266,4 +304,13 @@ fig.suptitle("Training and Validation Metrics", fontsize=18)
 plt.tight_layout()
 plt.savefig(PLOT_DIR / "training_curves.png")
 
+logger.info(f"Best model found at epoch {best_model_cfg['epoch']}, Val Loss: {best_model_cfg['loss']:.2f}, AUC: {best_model_cfg['auc']:.2%}, AP: {best_model_cfg['average_precision']:.2%}")
 
+if cfg["tsne_visualization"]:
+    # Load the best model for visualization
+    model.load_state_dict(best_model_cfg["best_model"])
+    user_embeddings, item_embeddings = get_embeddings(model)
+    tsne_visualization(user_embeddings, None, title="User Embeddings t-SNE", filename=PLOT_DIR / "user_embeddings_tsne.png")
+    tsne_visualization(item_embeddings, None, title="Item Embeddings t-SNE", filename=PLOT_DIR / "item_embeddings_tsne.png")
+
+logger.info(f"Done")

@@ -12,10 +12,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class GAE(nn.Module):
-    def __init__(self, data, encoder, decoder, cfg):
+class VGAE(nn.Module):
+    def __init__(self,data,encoder,decoder,cfg):
         """
-        Generalized VGAE/GAE model
+        Classical VGAE model
         input: 
             data = input data
             encoder = encoder function
@@ -24,7 +24,6 @@ class GAE(nn.Module):
         """
         super().__init__()
         self.cfg = cfg
-        self.variational = cfg.get('variational', True)  # Toggle for VGAE or GAE
 
         user_emb_dim = cfg['user_emb_dim']
         item_emb_dim = cfg['item_emb_dim']
@@ -56,7 +55,8 @@ class GAE(nn.Module):
         latent_dim = cfg['latent_dim']
         logger.debug(f"Input channels: {input_channels}, Hidden channels: {hidden_channels}, Latent dim: {latent_dim}")
 
-        self.encoder = encoder((-1, -1), hidden_channels, latent_dim, cfg)
+        self.encoder = encoder((-1,-1), hidden_channels, latent_dim, cfg)
+        # self.encoder = encoder((-1,-1), hidden_channels, latent_dim, cfg)
         self.encoder = to_hetero(self.encoder, metadata=data.metadata())
         self.decoder = decoder()
 
@@ -97,17 +97,9 @@ class GAE(nn.Module):
 
         x_dict = {"user": user_x, "item": item_x}
         edge_index_dict = data.edge_index_dict
-
-        if self.variational:
-            mu_dict, logvar_dict = self.encoder(x_dict, edge_index_dict)
-            z_user = self.reparameterize(mu_dict["user"], logvar_dict["user"])
-            z_item = self.reparameterize(mu_dict["item"], logvar_dict["item"])
-        else:
-            z_out = self.encoder(x_dict, edge_index_dict)
-            z_user = z_out["user"]
-            z_item = z_out["item"]
-            mu_dict, logvar_dict = None, None
-
+        mu_dict, logvar_dict = self.encoder(x_dict, edge_index_dict)
+        z_user = self.reparameterize(mu_dict["user"], logvar_dict["user"])
+        z_item = self.reparameterize(mu_dict["item"], logvar_dict["item"])
         z_dict = {"user": z_user, "item": z_item}
         return z_dict, mu_dict, logvar_dict
 
@@ -117,92 +109,40 @@ class GAE(nn.Module):
 
 
 
-class SageEncoder(nn.Module):
-    """
-    GraphSAGE-based encoder for (V)GAE models.
-
-    Args:
-        in_channels (int): Number of input features per node.
-        hidden_channels (int): Number of hidden units per layer.
-        latent_dim (int): Size of the latent embedding.
-        cfg (dict): Configuration dictionary. Keys include:
-            - 'n_layer': Number of layers.
-            - 'variational': If True, outputs (mu, logvar); else, outputs embedding.
-            - 'batch_norm': If True, applies BatchNorm after each layer.
-            - 'skip_connection': If True, adds skip connections.
-
-    Input shape:
-        x: Tensor of shape [num_nodes, in_channels]
-        edge_index: LongTensor of shape [2, num_edges]
-
-    Output shape:
-        If variational: (mu, logvar), each of shape [num_nodes, latent_dim]
-        Else: embedding of shape [num_nodes, latent_dim]
-    """
+class VarSageEncoder(nn.Module):
     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
-        """
-        Initialize the SageEncoder.
-
-        Args:
-            in_channels (int): Number of input features per node.
-            hidden_channels (int): Number of hidden units per layer.
-            latent_dim (int): Size of the latent embedding.
-            cfg (dict): Configuration dictionary.
-        """
         super().__init__()
-        self.variational = cfg.get('variational', True)
         self.convs = nn.ModuleList()
         self.convs.append(SAGEConv(in_channels, hidden_channels))
         
         for _ in range(1, cfg['n_layer']):
             self.convs.append(SAGEConv(hidden_channels, hidden_channels))
 
-        if self.variational:
-            self.conv_mu = SAGEConv(hidden_channels, latent_dim)
-            self.conv_logvar = SAGEConv(hidden_channels, latent_dim)
-        else:
-            self.conv_out = SAGEConv(hidden_channels, latent_dim)
+        self.conv_mu = SAGEConv(hidden_channels, latent_dim)
+        self.conv_logvar = SAGEConv(hidden_channels, latent_dim)
 
-        self.bns = nn.ModuleList([BatchNorm(hidden_channels) for _ in range(cfg['n_layer'])]) if cfg.get("batch_norm", False) else None
+        self.batch_norm = nn.ModuleList([BatchNorm(hidden_channels) for _ in range(cfg['n_layer'])]) if cfg.get("batch_norm", False) else None
         self.skip = cfg.get('skip_connection', False)
 
+
     def forward(self, x, edge_index):
-        """
-        Forward pass of the SageEncoder.
-
-        Args:
-            x (Tensor): Node features of shape [num_nodes, in_channels].
-            edge_index (LongTensor): Edge indices of shape [2, num_edges].
-
-        Returns:
-            If variational:
-                mu (Tensor): Mean embeddings of shape [num_nodes, latent_dim].
-                logvar (Tensor): Log-variance embeddings of shape [num_nodes, latent_dim].
-            Else:
-                out (Tensor): Embeddings of shape [num_nodes, latent_dim].
-        """
         for i, conv in enumerate(self.convs):
-            x_res = x.clone() if self.skip else None
+            x_res = x if self.skip else None
             x = conv(x, edge_index)
+            if self.batch_norm is not None:
+                x = self.batch_norm[i](x)
+            x = F.leaky_relu(x)
             if self.skip:
                 x = x + x_res
-            if self.bns is not None:
-                x = self.bns[i](x)
-            x = F.leaky_relu(x)
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
+        mu = self.conv_mu(x, edge_index)
+        logvar = self.conv_logvar(x, edge_index)
+        return mu, logvar
 
 
 
-class GATEncoder(nn.Module):
+class VarGATEncoder(nn.Module):
     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
         super().__init__()
-        self.variational = cfg.get('variational', True)
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
         self.self_linears = nn.ModuleList()
@@ -213,16 +153,13 @@ class GATEncoder(nn.Module):
             self.bns.append(BatchNorm(hidden_channels))
 
         for _ in range(1, cfg['n_layer']):
-            self.convs.append(GATConv(hidden_channels, hidden_channels, heads=1, dropout=cfg['dropout']))
+            self.convs.append(GATConv(hidden_channels, hidden_channels, heads=cfg['n_heads'], dropout=cfg['dropout']))
             self.self_linears.append(nn.Linear(-1, hidden_channels))
             if self.bns is not None:
                 self.bns.append(BatchNorm(hidden_channels))
 
-        if self.variational:
-            self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-            self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-        else:
-            self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
+        self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
+        self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
 
         self.skip = cfg.get('skip_connection', False)
 
@@ -236,19 +173,14 @@ class GATEncoder(nn.Module):
             x = F.leaky_relu(x)
             if self.skip:
                 x = x + x_res
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
+        mu = self.conv_mu(x, edge_index)
+        logvar = self.conv_logvar(x, edge_index)
+        return mu, logvar
 
 
-class GATMultiheadEncoder(nn.Module):
+class VarGATMultiheadEncoder(nn.Module):
     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
         super().__init__()
-        self.variational = cfg.get('variational', True)
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
         self.self_linears = nn.ModuleList()
@@ -267,11 +199,8 @@ class GATMultiheadEncoder(nn.Module):
             if self.bns is not None:
                 self.bns.append(BatchNorm(hidden_channels))
 
-        if self.variational:
-            self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-            self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-        else:
-            self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
+        self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
+        self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
 
         self.skip = cfg.get('skip_connection', False)
 
@@ -286,13 +215,9 @@ class GATMultiheadEncoder(nn.Module):
             x = F.leaky_relu(x)
             if self.skip:
                 x = x + x_res
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
+        mu = self.conv_mu(x, edge_index)
+        logvar = self.conv_logvar(x, edge_index)
+        return mu, logvar
 
 
 
@@ -319,6 +244,7 @@ class InnerProductDecoder(nn.Module):
         if sigmoid:
             A_pred = torch.sigmoid(A_pred)
         return A_pred
+
 
 
 

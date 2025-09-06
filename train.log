@@ -1,51 +1,72 @@
-09-02 20:38:43 - INFO - __main__ - Configuration:
-09-02 20:38:43 - INFO - __main__ - {'batch_method': 'binary_link_neighbors',
+09-06 15:04:07 - INFO - __main__ - Configuration:
+09-06 15:04:07 - INFO - __main__ - {'batch_method': 'binary_link_neighbors',
  'batch_norm': False,
- 'batch_size': 64,
- 'book_features': [{'dim': 64, 'name': 'random', 'xavier_init': True}],
+ 'batch_size': 128,
+ 'book_features': [{'degree_log_transform': True,
+                    'features': ['degree', 'coreness'],
+                    'name': 'topo'},
+                   {'name': 'textual_desc'},
+                   {'aggr_fn': 'mean', 'name': 'textual_reviews'}],
  'books_filename': 'books_filtered.parquet',
  'coreness_k': 10,
  'decoder': 'inner_product_decoder',
  'descriptions_filename': 'descriptions_filtered.parquet',
- 'dir': './data_sample',
+ 'dir': '../data_sample',
  'disjoint_train_ratio': 0.0,
- 'dropout': 0.3,
- 'emb_linear_transform': False,
+ 'dropout': 0.5,
  'embeddings_descriptions_filename': 'embeddings_descriptions_sbert_pt.parquet',
  'embeddings_reviews_filename': 'embeddings_reviews_sbert_pt.parquet',
- 'encoder': 'vgae_encoder',
- 'epochs': 10,
- 'eval_interval': 1,
- 'gnn_layer_cls': 'gat_conv',
+ 'encoder': 'sage_encoder',
+ 'epochs': 0,
+ 'eval_interval': 2,
+ 'feature_aggr_method': 'concat',
+ 'feature_linear_dim': 64,
  'hidden_channels': 32,
  'interactions_filename': 'interactions.parquet',
+ 'item_emb_dim': 64,
+ 'item_feature_linear': True,
+ 'kl_beta': 1.0,
+ 'kl_warmup_epoch': 50,
  'language_filter': True,
  'latent_dim': 16,
  'learning_rate': 0.01,
- 'n_heads': 5,
- 'n_layer': 2,
- 'negative_sampling_method': 'batch_random',
- 'negative_sampling_ratio': 100.0,
- 'num_neighbors': [20, 10],
+ 'n_layer': 1,
+ 'negative_sampling_method': 'pairwise_random',
+ 'negative_sampling_ratio': 1.0,
+ 'negative_sampling_recurrence': 'epoch',
+ 'num_neighbors': [10, 10],
+ 'opt_decay_rate': 0.1,
+ 'opt_decay_step': 20,
  'patience': 50,
- 'recon_loss': 'binary',
+ 'recon_loss': 'bpr',
  'review_coreness_k': 5,
  'reviews_filename': 'reviews_filtered.parquet',
- 'save_model': True,
+ 'save_model': False,
  'seed': 42,
  'skip_connection': False,
  'test_size': 0.1,
- 'user_features': [{'dim': 64, 'name': 'random', 'xavier_init': True}],
+ 'user_emb_dim': 64,
+ 'user_feature_linear': True,
+ 'user_features': [{'degree_log_transform': True,
+                    'features': ['degree', 'coreness'],
+                    'name': 'topo'},
+                   {'aggr_fn': 'mean', 'name': 'textual_reviews'}],
  'users_filename': 'users_filtered.parquet',
  'val_size': 0.1,
  'weight_decay': 1e-05}
-09-02 20:38:44 - INFO - src.data_loader - Initial size. Users: 43807, Books: 236065, Total: 279872, Edges: 1134132, Density: 0.010967%
-09-02 20:38:44 - INFO - src.data_loader - Filtered size. Users: 1494, Books: 1373, Total: 2867, Edges: 72538, Density: 3.536262%
-09-02 20:38:44 - INFO - src.data_loader - Initial textual embeddings size. Descriptions: 1373, Reviews: 17932, Total: 19305
-09-02 20:38:44 - INFO - src.data_loader - Filtered textual embeddings size. Descriptions: 1373, Reviews: 17132, Total: 18505
-09-02 20:38:44 - DEBUG - __main__ - Train: HeteroData(
-  user={ x=[1494, 64] },
-  item={ x=[1373, 64] },
+09-06 15:04:12 - INFO - src.data_loader - Initial size. Users: 43807, Books: 236065, Total: 279872, Edges: 1134132, Density: 0.010967%
+09-06 15:04:12 - INFO - src.data_loader - Filtered size. Users: 1494, Books: 1373, Total: 2867, Edges: 72538, Density: 3.536262%
+09-06 15:04:12 - INFO - src.data_loader - Initial textual embeddings size. Descriptions: 1373, Reviews: 17932, Total: 19305
+09-06 15:04:12 - INFO - src.data_loader - Filtered textual embeddings size. Descriptions: 1373, Reviews: 17132, Total: 18505
+09-06 15:04:12 - DEBUG - __main__ - Train: HeteroData(
+  user={
+    node_id=[1494],
+    x=[1494, 386],
+  },
+  item={
+    node_id=[1373],
+    x=[1373, 770],
+  },
   (user, interacts, item)={
     edge_index=[2, 58032],
     edge_label=[58032],
@@ -53,9 +74,15 @@
   },
   (item, rev_interacts, user)={ edge_index=[2, 58032] }
 )
-09-02 20:38:44 - DEBUG - __main__ - Val: HeteroData(
-  user={ x=[1494, 64] },
-  item={ x=[1373, 64] },
+09-06 15:04:12 - DEBUG - __main__ - Val: HeteroData(
+  user={
+    node_id=[1494],
+    x=[1494, 386],
+  },
+  item={
+    node_id=[1373],
+    x=[1373, 770],
+  },
   (user, interacts, item)={
     edge_index=[2, 58032],
     edge_label=[14506],
@@ -63,9 +90,15 @@
   },
   (item, rev_interacts, user)={ edge_index=[2, 58032] }
 )
-09-02 20:38:44 - DEBUG - __main__ - Test: HeteroData(
-  user={ x=[1494, 64] },
-  item={ x=[1373, 64] },
+09-06 15:04:12 - DEBUG - __main__ - Test: HeteroData(
+  user={
+    node_id=[1494],
+    x=[1494, 386],
+  },
+  item={
+    node_id=[1373],
+    x=[1373, 770],
+  },
   (user, interacts, item)={
     edge_index=[2, 65285],
     edge_label=[14506],
@@ -73,50 +106,31 @@
   },
   (item, rev_interacts, user)={ edge_index=[2, 65285] }
 )
-09-02 20:38:44 - DEBUG - root - Inferred 'filter_per_worker=True' option for feature fetching routines of the data loader
-09-02 20:38:45 - INFO - model - Model Summary:
-09-02 20:38:45 - INFO - model - ----------------
-09-02 20:38:45 - INFO - model - Encoder:
-09-02 20:38:45 - INFO - model - VGAEncoder(
-  (convs): ModuleList(
-    (0): GATConv(64, 32, heads=5)
-    (1): GATConv(32, 32, heads=5)
+09-06 15:04:12 - DEBUG - root - Inferred 'filter_per_worker=True' option for feature fetching routines of the data loader
+09-06 15:04:12 - DEBUG - model - Input channels: (128, 128), Hidden channels: 32, Latent dim: 16
+09-06 15:04:13 - INFO - root - Model summary:
+09-06 15:04:13 - INFO - root - VGAE(
+  (user_embedding): Embedding(1494, 64)
+  (item_embedding): Embedding(1373, 64)
+  (user_feature_linear): Linear(in_features=386, out_features=64, bias=True)
+  (item_feature_linear): Linear(in_features=770, out_features=64, bias=True)
+  (encoder): GraphModule(
+    (convs): ModuleList(
+      (0): ModuleDict(
+        (user__interacts__item): SAGEConv((-1, -1), 32, aggr=mean)
+        (item__rev_interacts__user): SAGEConv((-1, -1), 32, aggr=mean)
+      )
+    )
+    (conv_mu): ModuleDict(
+      (user__interacts__item): SAGEConv(32, 16, aggr=mean)
+      (item__rev_interacts__user): SAGEConv(32, 16, aggr=mean)
+    )
+    (conv_logvar): ModuleDict(
+      (user__interacts__item): SAGEConv(32, 16, aggr=mean)
+      (item__rev_interacts__user): SAGEConv(32, 16, aggr=mean)
+    )
   )
-  (linears): ModuleList(
-    (0-1): 2 x Linear(in_features=160, out_features=32, bias=True)
-  )
-  (conv_mu): GATConv(32, 16, heads=1)
-  (conv_logvar): GATConv(32, 16, heads=1)
+  (decoder): InnerProductDecoder()
 )
-09-02 20:38:45 - INFO - model - Decoder:
-09-02 20:38:45 - INFO - model - InnerProductDecoder()
-09-02 20:39:12 - INFO - __main__ - Epoch: 0, Loss: 1.60
-09-02 20:39:12 - INFO - __main__ - Train. Total Loss: 1.60, Rec.: 1.46, KL: 0.14, AUC: 50.42%, AP: 1.75%
-09-02 20:39:12 - INFO - __main__ - Val. Total Loss: 1.79, Rec.: 1.55, KL: 0.24, AUC: 49.90%, AP: 50.55%
-09-02 20:39:38 - INFO - __main__ - Epoch: 1, Loss: 1.53
-09-02 20:39:38 - INFO - __main__ - Train. Total Loss: 1.53, Rec.: 1.43, KL: 0.10, AUC: 50.61%, AP: 1.83%
-09-02 20:39:38 - INFO - __main__ - Val. Total Loss: 1.77, Rec.: 1.52, KL: 0.25, AUC: 50.37%, AP: 51.00%
-09-02 20:40:04 - INFO - __main__ - Epoch: 2, Loss: 1.52
-09-02 20:40:04 - INFO - __main__ - Train. Total Loss: 1.52, Rec.: 1.43, KL: 0.09, AUC: 50.57%, AP: 1.82%
-09-02 20:40:04 - INFO - __main__ - Val. Total Loss: 1.79, Rec.: 1.57, KL: 0.22, AUC: 50.16%, AP: 51.08%
-09-02 20:40:30 - INFO - __main__ - Epoch: 3, Loss: 1.51
-09-02 20:40:30 - INFO - __main__ - Train. Total Loss: 1.51, Rec.: 1.43, KL: 0.09, AUC: 50.73%, AP: 1.82%
-09-02 20:40:30 - INFO - __main__ - Val. Total Loss: 1.97, Rec.: 1.85, KL: 0.12, AUC: 50.05%, AP: 50.29%
-09-02 20:40:57 - INFO - __main__ - Epoch: 4, Loss: nan
-09-02 20:40:57 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.04%, AP: 1.78%
-09-02 20:40:57 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
-09-02 20:41:23 - INFO - __main__ - Epoch: 5, Loss: nan
-09-02 20:41:23 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.04%, AP: 1.79%
-09-02 20:41:23 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
-09-02 20:41:49 - INFO - __main__ - Epoch: 6, Loss: nan
-09-02 20:41:49 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.04%, AP: 1.79%
-09-02 20:41:49 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
-09-02 20:42:16 - INFO - __main__ - Epoch: 7, Loss: nan
-09-02 20:42:16 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.03%, AP: 1.79%
-09-02 20:42:16 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
-09-02 20:42:42 - INFO - __main__ - Epoch: 8, Loss: nan
-09-02 20:42:42 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.04%, AP: 1.79%
-09-02 20:42:42 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
-09-02 20:43:08 - INFO - __main__ - Epoch: 9, Loss: nan
-09-02 20:43:08 - INFO - __main__ - Train. Total Loss: nan, Rec.: nan, KL: nan, AUC: 50.00%, AP: 1.79%
-09-02 20:43:08 - INFO - __main__ - Val. Total Loss: nan, Rec.: nan, KL: nan, AUC: 100.00%, AP: 100.00%
+09-06 15:04:16 - INFO - __main__ - Best model found at epoch 0, Val Loss: inf, AUC: 0.00%, AP: 0.00%
+09-06 15:04:16 - INFO - __main__ - Done

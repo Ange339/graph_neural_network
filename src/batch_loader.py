@@ -19,12 +19,21 @@ class BatchLoader:
 
 
     def BinaryLinkNeighbors(self, data, shuffle):
+        neg_sampling_recurrence = self.cfg.get('negative_sampling_recurrence', "epoch")
+
+        if neg_sampling_recurrence == "fixed":
+            num_edges = data['user', 'interacts', 'item'].edge_label_index.size(1)
+            amount = int(num_edges * self.cfg['negative_sampling_ratio'])
+            neg_sampling = NegativeSampling(mode='binary', amount=amount)
+        else:
+            neg_sampling = None
+
         loader = LinkNeighborLoader(data=data,
             num_neighbors=self.cfg['num_neighbors'],
             edge_label_index=(("user", "interacts", "item"), data['user', 'interacts', 'item'].edge_label_index),
             edge_label=data['user', 'interacts', 'item'].edge_label,
             batch_size=self.cfg['batch_size'],
-            #neg_sampling=NegativeSampling(mode='binary', amount=cfg['num_negative_sampling']), I will make my version
+            neg_sampling=neg_sampling,
             shuffle=shuffle,
         )
         return loader
