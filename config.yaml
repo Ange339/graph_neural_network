@@ -55,7 +55,7 @@ item_feature_linear: true
 feature_linear_dim: 64
 feature_aggr_method: "concat" # "concat", "add", "mean", "max"
 dropout: 0.5
-skip_connection: false
+skip_connection: None # "sum", "concat", None
 batch_norm: false
 encoder: sage_encoder
 decoder: inner_product_decoder
@@ -65,6 +65,7 @@ variational: true
 negative_sampling_method: "pairwise_random" # "batch_random",  "pairwise_random"
 negative_sampling_recurrence: "epoch" # "epoch", "fixed"
 negative_sampling_ratio: 1.0
+retrieval_k: 300
 epochs: 1
 learning_rate: 0.01
 weight_decay: 0.00001

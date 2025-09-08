@@ -66,17 +66,76 @@ def validate_edge_indices(data):
 
 ## Metrics
 def compute_auc(y_scores, y_true):
+    "AUC is obtained by trapezoidal interpolation of the precision"
     y_true = y_true.long()
     y_scores = torch.sigmoid(y_scores)  # Apply sigmoid to logits
     score = AUROC(task="binary")(y_scores, y_true).item()
     return score
 
 def compute_average_precision(y_scores, y_true):
+    "Area under the precision-recall curve"
     y_true = y_true.long()
     y_scores = torch.sigmoid(y_scores)  # Apply sigmoid to logits
     score = AveragePrecision(task="binary")(y_scores, y_true).item()
     return score
 
+
+def compute_recall_at_k(y_scores, y_true, k=10):
+    """
+    Compute recall@k for binary link prediction.
+    It measures the proportion of correctly identified relevant items in the top K recommendations out of the total number of relevant items in the dataset
+    y_scores: Tensor of predicted scores (logits or probabilities).
+    y_true: Tensor of true binary labels (0 or 1).
+    k: Number of top elements to consider.
+    """
+    # Ensure y_scores and y_true are 1D tensors
+    if y_scores.dim() > 1:
+        y_scores = y_scores.view(-1)
+    if y_true.dim() > 1:
+        y_true = y_true.view(-1)
+
+    # Ensure k does not exceed the number of elements
+    k = min(k, y_scores.size(0))
+    # Get indices of top-k predictions
+    _, topk_indices = torch.topk(y_scores, k)
+    # Select the true labels at these indices
+    topk_true = y_true[topk_indices]
+    # Number of relevant items in top-k
+    relevant_in_topk = topk_true.sum().item()
+    # Total number of relevant items
+    total_relevant = y_true.sum().item()
+    if total_relevant == 0:
+        return 0.0
+    # Recall@k = relevant_in_topk / total_relevant
+    recall_at_k = relevant_in_topk / total_relevant
+    return recall_at_k
+
+def compute_precision_at_k(y_scores, y_true, k=10):
+    """
+    Compute precision@k.
+    It measures the proportion of correctly identified relevant items in the top K recommendations out of the total number of recommended items.
+    y_scores: Tensor of predicted scores (logits or probabilities).
+    y_true: Tensor of true binary labels (0 or 1).
+    k: Number of top elements to consider.
+    """
+    
+    if y_scores.dim() > 1:
+        y_scores = y_scores.view(-1)
+    if y_true.dim() > 1:
+        y_true = y_true.view(-1)
+
+    # Get indices of top-k predictions
+    _, topk_indices = torch.topk(y_scores, k)
+
+    # Select the true labels at these indices
+    topk_true = y_true[topk_indices]
+    
+    # Number of relevant items in top-k
+    relevant_in_topk = topk_true.sum().item()
+    
+    # Precision@k = relevant_in_topk / k
+    precision_at_k = relevant_in_topk / k
+    return precision_at_k
 
 ## Evaluation
 @torch.no_grad()
@@ -109,12 +168,18 @@ def evaluate(data, model, loss_functions, kl_beta, cfg):
 
     auc = compute_auc(preds, edge_label)
     avg_precision = compute_average_precision(preds, edge_label)
+    precision_at_k = compute_precision_at_k(preds, edge_label, k=cfg.get("retrieval_k", 10))
+    recall_at_k = compute_recall_at_k(preds, edge_label, k=cfg.get("retrieval_k", 10))
 
-    result = { "loss": loss,
-                "loss_recon": loss_recon,
-                "loss_kl": loss_kl,
-                "auc": auc,
-                "average_precision": avg_precision }
+    result = { 
+        "loss": loss,
+        "loss_recon": loss_recon,
+        "loss_kl": loss_kl,
+        "auc": auc,
+        "average_precision": avg_precision,
+        "precision_at_k": precision_at_k,
+        "recall_at_k": recall_at_k
+    }
 
     return result
 
@@ -168,8 +233,11 @@ def evaluate(data, model, loss_functions, kl_beta, cfg):
 
 ## Visualization
 def get_embeddings(model):
-    user_embeddings = model['user_embedding.weight'].detach().cpu().numpy()
-    item_embeddings = model['item_embedding.weight'].detach().cpu().numpy()
+    if isinstance(model, torch.nn.DataParallel):
+        model = model.module
+
+    user_embeddings = model.user_embedding.weight.detach().cpu().numpy()
+    item_embeddings = model.item_embedding.weight.detach().cpu().numpy()
     return user_embeddings, item_embeddings
 
 def tsne_visualization(embeddings, labels, title="t-SNE Visualization", filename=None):

@@ -13,6 +13,5 @@ EMB_FEATURE_REGISTRY = {
 MODEL_REGISTRY = {
     "sage_encoder": SageEncoder,
     "gat_encoder": GATEncoder,
-    "gat_multihead_encoder": GATMultiheadEncoder,
     "inner_product_decoder": InnerProductDecoder,
 }

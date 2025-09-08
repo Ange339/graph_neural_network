@@ -1,15 +1,17 @@
 import pprint
+from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv, to_hetero ,BatchNorm
-
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv, to_hetero, BatchNorm, Linear
 from torchsummary import summary
+from src.gnn_layers import GNNLayer, SageLayer, GATLayer
 
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 
 class GAE(nn.Module):
@@ -57,7 +59,8 @@ class GAE(nn.Module):
         logger.debug(f"Input channels: {input_channels}, Hidden channels: {hidden_channels}, Latent dim: {latent_dim}")
 
         self.encoder = encoder((-1, -1), hidden_channels, latent_dim, cfg)
-        self.encoder = to_hetero(self.encoder, metadata=data.metadata())
+        #self.encoder = to_hetero(self.encoder, metadata=data.metadata())
+        self.encoder = self._wrap_layers(self.encoder, metadata=data.metadata(), aggr='mean')
         self.decoder = decoder()
 
     def _process_features(self, node_data, node_type, embedding, lin_project):
@@ -82,6 +85,21 @@ class GAE(nn.Module):
         else:
             logger.fatal(f"Unknown aggregation method: {aggr_method}")
             raise ValueError(f"Unknown aggregation method: {aggr_method}")
+
+    def _wrap_layers(self, module, metadata, aggr='mean'):
+        """
+        Recursively wraps all customer GNNlayers or MessagePassing submodules with to_hetero.
+        """
+        for name, child in module.named_children():
+            # If the child is a custom GNN layer
+            if isinstance(child, GNNLayer):
+                # Replace the original child module with its heterogeneous version using to_hetero
+                # This is necessary because to_hetero returns a new module instance
+                setattr(module, name, to_hetero(child, metadata, aggr=aggr))
+            # Recurse for children of children
+            else:
+                wrap_layers(child, metadata, aggr)
+        return module
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -116,184 +134,133 @@ class GAE(nn.Module):
 
 
 
+#### ENCODERS ####
 
-class SageEncoder(nn.Module):
-    """
-    GraphSAGE-based encoder for (V)GAE models.
-
-    Args:
-        in_channels (int): Number of input features per node.
-        hidden_channels (int): Number of hidden units per layer.
-        latent_dim (int): Size of the latent embedding.
-        cfg (dict): Configuration dictionary. Keys include:
-            - 'n_layer': Number of layers.
-            - 'variational': If True, outputs (mu, logvar); else, outputs embedding.
-            - 'batch_norm': If True, applies BatchNorm after each layer.
-            - 'skip_connection': If True, adds skip connections.
-
-    Input shape:
-        x: Tensor of shape [num_nodes, in_channels]
-        edge_index: LongTensor of shape [2, num_edges]
-
-    Output shape:
-        If variational: (mu, logvar), each of shape [num_nodes, latent_dim]
-        Else: embedding of shape [num_nodes, latent_dim]
-    """
+class GraphEncoderBase(nn.Module, ABC):
     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
-        """
-        Initialize the SageEncoder.
-
-        Args:
-            in_channels (int): Number of input features per node.
-            hidden_channels (int): Number of hidden units per layer.
-            latent_dim (int): Size of the latent embedding.
-            cfg (dict): Configuration dictionary.
-        """
         super().__init__()
-        self.variational = cfg.get('variational', True)
-        self.convs = nn.ModuleList()
-        self.convs.append(SAGEConv(in_channels, hidden_channels))
+        self.variational = cfg.get("variational", True)
+        batch_norm = cfg.get("batch_norm", False)
+        skip_connection = cfg.get("skip_connection", None)
+        dropout = cfg.get("dropout", 0.30)
+        heads = cfg.get("heads", 1)
+        n_layer = cfg["n_layer"]
+
+        # Hidden layers
+        self.layers = nn.ModuleList()
+        self.layers.append(self._make_layer(in_channels, hidden_channels))
+        for _ in range(1, self.n_layer):
+            self.layers.append(self._make_layer(hidden_channels, hidden_channels))
+
+        # Output layers
+        if self.variational:
+            self.conv_mu = self._make_layer(hidden_channels, latent_dim, final=True)
+            self.conv_logvar = self._make_layer(hidden_channels, latent_dim, final=True)
+        else:
+            self.conv_out = self._make_layer(hidden_channels, latent_dim, final=True)
+
+    @abstractmethod
+    def _make_layer(self, in_channels, out_channels, batch_norm=True, skip='sum', dropout=0.3, heads=1, is_final_layer=False):
+        """Return a GNNLayer (e.g. SageLayer, GATLayer)."""
+        pass
+
+    def forward(self, x, edge_index):
+        for layer in self.layers:
+            x = layer(x, edge_index)
+
+        if self.variational:
+            mu = self.conv_mu(x, edge_index)
+            logvar = self.conv_logvar(x, edge_index)
+            return mu, logvar
+        else:
+            return self.conv_out(x, edge_index)
+
+
+class SageEncoder(GraphEncoderBase):
+    def _make_layer(self, in_channels, out_channels, batch_norm=True, skip='sum', dropout=0.3, heads=1, is_final_layer=False):
+        return SageLayer(
+            in_channels, out_channels,
+            batch_norm=batch_norm,
+            skip_connection=self.skip_connection,
+            dropout=0 if final else self.dropout,
+            heads=1,
+            is_final_layer=final
+        )
+
+
+class GATEncoder(GraphEncoderBase):
+    def _make_layer(self, in_channels, out_channels, final=False):
+        return GATLayer(
+            in_channels, out_channels,
+            batch_norm=self.batch_norm,
+            skip_connection=self.skip_connection if not final else None,
+            dropout=0 if final else self.dropout,
+            heads=self.heads,
+            is_final_layer=final
+        )
+
+
+
+# class SageEncoder(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
+#         super().__init__()
+#         self.variational = cfg.get('variational', True)
+#         self.layers = nn.ModuleList()
+#         batch_norm = cfg.get("batch_norm", False)
+#         skip = cfg.get('skip_connection', None)
+#         self.dropout = cfg.get('dropout', 0.30)
+#         self.layers.append(SageLayer(in_channels, hidden_channels, batch_norm=batch_norm, skip=skip, dropout=self.dropout))
+#         for _ in range(1, cfg['n_layer']):
+#             self.layers.append(SageLayer(hidden_channels, hidden_channels, batch_norm=batch_norm, skip=skip, dropout=self.dropout))
         
-        for _ in range(1, cfg['n_layer']):
-            self.convs.append(SAGEConv(hidden_channels, hidden_channels))
-
-        if self.variational:
-            self.conv_mu = SAGEConv(hidden_channels, latent_dim)
-            self.conv_logvar = SAGEConv(hidden_channels, latent_dim)
-        else:
-            self.conv_out = SAGEConv(hidden_channels, latent_dim)
-
-        self.bns = nn.ModuleList([BatchNorm(hidden_channels) for _ in range(cfg['n_layer'])]) if cfg.get("batch_norm", False) else None
-        self.skip = cfg.get('skip_connection', False)
-
-    def forward(self, x, edge_index):
-        """
-        Forward pass of the SageEncoder.
-
-        Args:
-            x (Tensor): Node features of shape [num_nodes, in_channels].
-            edge_index (LongTensor): Edge indices of shape [2, num_edges].
-
-        Returns:
-            If variational:
-                mu (Tensor): Mean embeddings of shape [num_nodes, latent_dim].
-                logvar (Tensor): Log-variance embeddings of shape [num_nodes, latent_dim].
-            Else:
-                out (Tensor): Embeddings of shape [num_nodes, latent_dim].
-        """
-        for i, conv in enumerate(self.convs):
-            x_res = x.clone() if self.skip else None
-            x = conv(x, edge_index)
-            if self.skip:
-                x = x + x_res
-            if self.bns is not None:
-                x = self.bns[i](x)
-            x = F.leaky_relu(x)
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
+#         if self.variational:
+#             self.conv_mu = SageLayer(hidden_channels, latent_dim, batch_norm=False, skip=None, dropout=0, is_final_layer=True)
+#             self.conv_logvar = SageLayer(hidden_channels, latent_dim, batch_norm=False, skip=None, dropout=0, is_final_layer=True)
+#         else:
+#             self.conv_out = SageLayer(hidden_channels, latent_dim, batch_norm=False, skip=skip, dropout=0, is_final_layer=True)
 
 
-
-class GATEncoder(nn.Module):
-    def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
-        super().__init__()
-        self.variational = cfg.get('variational', True)
-        self.convs = nn.ModuleList()
-        self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
-        self.self_linears = nn.ModuleList()
-
-        self.convs.append(GATConv(in_channels, hidden_channels, add_self_loops=False, dropout=cfg['dropout']))
-        self.self_linears.append(nn.Linear(-1, hidden_channels))
-        if self.bns is not None:
-            self.bns.append(BatchNorm(hidden_channels))
-
-        for _ in range(1, cfg['n_layer']):
-            self.convs.append(GATConv(hidden_channels, hidden_channels, heads=1, dropout=cfg['dropout']))
-            self.self_linears.append(nn.Linear(-1, hidden_channels))
-            if self.bns is not None:
-                self.bns.append(BatchNorm(hidden_channels))
-
-        if self.variational:
-            self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-            self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-        else:
-            self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-
-        self.skip = cfg.get('skip_connection', False)
+#     def forward(self, x, edge_index):
+#         for layer in self.layers:
+#             x = layer(x, edge_index)
+#         if self.variational:
+#             mu = self.conv_mu(x, edge_index)
+#             logvar = self.conv_logvar(x, edge_index)
+#             return mu, logvar
+#         else:
+#             out = self.conv_out(x, edge_index)
+#             return out
 
 
-    def forward(self, x, edge_index):
-        for i, conv in enumerate(self.convs):
-            x_res = x if self.skip else None
-            x = conv(x, edge_index) + self.self_linears[i](x)
-            if self.bns is not None:
-                x = self.bns[i](x)
-            x = F.leaky_relu(x)
-            if self.skip:
-                x = x + x_res
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
+# class GATEncoder(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
+#         super().__init__()
+#         self.variational = cfg.get('variational', True)
+#         self.layers = nn.ModuleList()
+#         batch_norm = cfg.get("batch_norm", False)
+#         skip = cfg.get('skip_connection', None)
+#         dropout = cfg.get('dropout', 0.30)
+#         heads = cfg.get('heads', 1)
+#         self.layers.append(GATLayer(in_channels, hidden_channels, batch_norm=batch_norm, skip=skip, dropout=dropout, heads=heads))
+#         for _ in range(1, cfg['n_layer']):
+#             self.layers.append(GATLayer(hidden_channels, hidden_channels, batch_norm=batch_norm, skip=skip, dropout=dropout, heads=heads))
 
+#         if self.variational:
+#             self.conv_mu = GATLayer(hidden_channels, latent_dim, batch_norm=False, skip=None, dropout=0, heads=1, is_final_layer=True)
+#             self.conv_logvar = GATLayer(hidden_channels, latent_dim, batch_norm=False, skip=None, dropout=0, heads=1, is_final_layer=True)
+#         else:
+#             self.conv_out = GATLayer(hidden_channels, latent_dim, batch_norm=False, skip=skip, dropout=0, heads=1, is_final_layer=True)
 
-class GATMultiheadEncoder(nn.Module):
-    def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
-        super().__init__()
-        self.variational = cfg.get('variational', True)
-        self.convs = nn.ModuleList()
-        self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
-        self.self_linears = nn.ModuleList()
-        self.linears = nn.ModuleList()
-
-        self.convs.append(GATConv(in_channels, hidden_channels, add_self_loops=False, heads=cfg['n_heads'], dropout=cfg['dropout']))
-        self.self_linears.append(nn.Linear(-1, hidden_channels))
-        self.linears.append(nn.Linear(-1, hidden_channels))
-        if self.bns is not None:
-            self.bns.append(BatchNorm(hidden_channels))
-
-        for _ in range(1, cfg['n_layer']):
-            self.convs.append(GATConv(hidden_channels, hidden_channels, heads=cfg['n_heads'], dropout=cfg['dropout']))
-            self.self_linears.append(nn.Linear(-1, hidden_channels))
-            self.linears.append(nn.Linear(-1, hidden_channels))
-            if self.bns is not None:
-                self.bns.append(BatchNorm(hidden_channels))
-
-        if self.variational:
-            self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-            self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-        else:
-            self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
-
-        self.skip = cfg.get('skip_connection', False)
-
-
-    def forward(self, x, edge_index):
-        for i, conv in enumerate(self.convs):
-            x_res = x if self.skip else None
-            x = conv(x, edge_index) + self.self_linears[i](x)
-            x = self.linears[i](x)
-            if self.bns is not None:
-                x = self.bns[i](x)
-            x = F.leaky_relu(x)
-            if self.skip:
-                x = x + x_res
-        if self.variational:
-            mu = self.conv_mu(x, edge_index)
-            logvar = self.conv_logvar(x, edge_index)
-            return mu, logvar
-        else:
-            out = self.conv_out(x, edge_index)
-            return out
-
+#     def forward(self, x, edge_index):
+#         for layer in self.layers:
+#             x = layer(x, edge_index)
+#         if self.variational:
+#             mu = self.conv_mu(x, edge_index)
+#             logvar = self.conv_logvar(x, edge_index)
+#             return mu, logvar
+#         else:
+#             out = self.conv_out(x, edge_index)
+#             return out
 
 
 class InnerProductDecoder(nn.Module):
@@ -310,7 +277,6 @@ class InnerProductDecoder(nn.Module):
 
         if sigmoid:
             preds = torch.sigmoid(preds)
-
         return preds
     
     def forward_all(self, z, sigmoid=True):
@@ -319,6 +285,191 @@ class InnerProductDecoder(nn.Module):
         if sigmoid:
             A_pred = torch.sigmoid(A_pred)
         return A_pred
+
+
+
+# class SageEncoder(nn.Module):
+#     """
+#     GraphSAGE-based encoder for (V)GAE models.
+
+#     Args:
+#         in_channels (int): Number of input features per node.
+#         hidden_channels (int): Number of hidden units per layer.
+#         latent_dim (int): Size of the latent embedding.
+#         cfg (dict): Configuration dictionary. Keys include:
+#             - 'n_layer': Number of layers.
+#             - 'variational': If True, outputs (mu, logvar); else, outputs embedding.
+#             - 'batch_norm': If True, applies BatchNorm after each layer.
+#             - 'skip_connection': If True, adds skip connections.
+
+#     Input shape:
+#         x: Tensor of shape [num_nodes, in_channels]
+#         edge_index: LongTensor of shape [2, num_edges]
+
+#     Output shape:
+#         If variational: (mu, logvar), each of shape [num_nodes, latent_dim]
+#         Else: embedding of shape [num_nodes, latent_dim]
+#     """
+#     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
+#         """
+#         Initialize the SageEncoder.
+
+#         Args:
+#             in_channels (int): Number of input features per node.
+#             hidden_channels (int): Number of hidden units per layer.
+#             latent_dim (int): Size of the latent embedding.
+#             cfg (dict): Configuration dictionary.
+#         """
+#         super().__init__()
+#         self.variational = cfg.get('variational', True)
+#         self.dropout = cfg.get('dropout', 0.30)
+#         self.convs = nn.ModuleList()
+#         self.convs.append(SAGEConv(in_channels, hidden_channels))
+        
+#         for _ in range(1, cfg['n_layer']):
+#             self.convs.append(SAGEConv(hidden_channels, hidden_channels))
+
+#         if self.variational:
+#             self.conv_mu = SAGEConv(hidden_channels, latent_dim)
+#             self.conv_logvar = SAGEConv(hidden_channels, latent_dim)
+#         else:
+#             self.conv_out = SAGEConv(hidden_channels, latent_dim)
+
+#         self.bns = nn.ModuleList([BatchNorm(hidden_channels) for _ in range(cfg['n_layer'])]) if cfg.get("batch_norm", False) else None
+#         self.skip = cfg.get('skip_connection', None)
+
+#     def forward(self, x, edge_index):
+#         """
+#         Forward pass of the SageEncoder.
+
+#         Args:
+#             x (Tensor): Node features of shape [num_nodes, in_channels].
+#             edge_index (LongTensor): Edge indices of shape [2, num_edges].
+
+#         Returns:
+#             If variational:
+#                 mu (Tensor): Mean embeddings of shape [num_nodes, latent_dim].
+#                 logvar (Tensor): Log-variance embeddings of shape [num_nodes, latent_dim].
+#             Else:
+#                 out (Tensor): Embeddings of shape [num_nodes, latent_dim].
+#         """
+#         for i, conv in enumerate(self.convs):
+#             x_res = x.clone() if i > 0 and self.skip else None
+#             x = conv(x, edge_index)
+#             if self.bns is not None:
+#                 x = self.bns[i](x)
+#             x = F.leaky_relu(x)
+#             if i > 0 and self.skip == 'sum':
+#                 x = x + x_res
+#             x = F.dropout(x, p=self.dropout, training=self.training)
+            
+#         if self.variational:
+#             mu = self.conv_mu(x, edge_index)
+#             logvar = self.conv_logvar(x, edge_index)
+#             return mu, logvar
+#         else:
+#             out = self.conv_out(x, edge_index)
+#             out = F.dropout(out, p=self.dropout, training=self.training)
+#             return out
+
+
+
+
+# class GATEncoder(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
+#         super().__init__()
+#         self.variational = cfg.get('variational', True)
+#         self.convs = nn.ModuleList()
+#         self.self_linears = nn.ModuleList()
+
+#         self.convs.append(GATConv(in_channels, hidden_channels, heads=1, add_self_loops=False, dropout=cfg['dropout']))
+#         self.self_linears.append(nn.Linear(-1, hidden_channels))
+
+#         for _ in range(1, cfg['n_layer']):
+#             self.convs.append(GATConv(hidden_channels, hidden_channels, heads=1, add_self_loops=False, dropout=cfg['dropout']))
+#             self.self_linears.append(nn.Linear(-1, hidden_channels))
+
+#         if self.variational:
+#             self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, add_self_loops=False, dropout=0) # We don't apply dropout here
+#             self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, add_self_loops=False, dropout=0)
+#         else:
+#             self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, add_self_loops=False, dropout=cfg['dropout'])
+
+#         self.bns = nn.ModuleList([BatchNorm(hidden_channels) for _ in range(cfg['n_layer'])]) if cfg.get("batch_norm", False) else None
+#         self.skip = cfg.get('skip_connection', None)
+
+
+#     def forward(self, x, edge_index):
+#         "Forward pass"
+#         for i, conv in enumerate(self.convs):
+#             x_res = x.clone() if i > 0 and self.skip == 'sum' else None
+#             x = conv(x, edge_index) + self.self_linears[i](x)
+#             if self.bns is not None:
+#                 x = self.bns[i](x)
+#             x = F.leaky_relu(x)
+#             if i > 0 and self.skip == 'sum':
+#                 x = x + x_res
+            
+#         if self.variational:
+#             mu = self.conv_mu(x, edge_index)
+#             logvar = self.conv_logvar(x, edge_index)
+#             return mu, logvar
+#         else:
+#             out = self.conv_out(x, edge_index)
+#             return out
+
+
+# class GATMultiheadEncoder(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, latent_dim, cfg):
+#         super().__init__()
+#         self.variational = cfg.get('variational', True)
+#         self.convs = nn.ModuleList()
+#         self.bns = nn.ModuleList() if cfg.get("batch_norm", False) else None
+#         self.self_linears = nn.ModuleList()
+#         self.linears = nn.ModuleList()
+
+#         self.convs.append(GATConv(in_channels, hidden_channels, add_self_loops=False, heads=cfg['n_heads'], dropout=cfg['dropout']))
+#         self.self_linears.append(nn.Linear(-1, hidden_channels))
+#         self.linears.append(nn.Linear(-1, hidden_channels))
+#         if self.bns is not None:
+#             self.bns.append(BatchNorm(hidden_channels))
+
+#         for _ in range(1, cfg['n_layer']):
+#             self.convs.append(GATConv(hidden_channels, hidden_channels, heads=cfg['n_heads'], dropout=cfg['dropout']))
+#             self.self_linears.append(nn.Linear(-1, hidden_channels))
+#             self.linears.append(nn.Linear(-1, hidden_channels))
+#             if self.bns is not None:
+#                 self.bns.append(BatchNorm(hidden_channels))
+
+#         if self.variational:
+#             self.conv_mu = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=0)
+#             self.conv_logvar = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=0)
+#         else:
+#             self.conv_out = GATConv(hidden_channels, latent_dim, heads=1, concat=False, dropout=cfg['dropout'])
+
+#         self.skip = cfg.get('skip_connection', False)
+
+
+#     def forward(self, x, edge_index):
+#         for i, conv in enumerate(self.convs):
+#             x_res = x if self.skip else None
+#             x = conv(x, edge_index) + self.self_linears[i](x)
+#             x = self.linears[i](x)
+#             if self.bns is not None:
+#                 x = self.bns[i](x)
+#             x = F.leaky_relu(x)
+#             if self.skip:
+#                 x = x + x_res
+#         if self.variational:
+#             mu = self.conv_mu(x, edge_index)
+#             logvar = self.conv_logvar(x, edge_index)
+#             return mu, logvar
+#         else:
+#             out = self.conv_out(x, edge_index)
+#             return out
+
+
+
 
 
 

@@ -49,14 +49,13 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 #     )
 
 logging.basicConfig(level=logging.INFO)
-
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
 # Parser
-parser = argparse.ArgumentParser(description="Load parquet datasets")
+parser = argparse.ArgumentParser(description="Load configuration file")
 parser.add_argument("--config", type=str, default=f"{DIR}/config.yaml", help="Path to YAML config file")
 args, unknown = parser.parse_known_args()
 
@@ -221,11 +220,15 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         y_scores, y_true = torch.cat(all_preds), torch.cat(all_labels)
         auc_score = compute_auc(y_scores, y_true)
         avg_precision = compute_average_precision(y_scores, y_true)
+        precision_at_k = compute_precision_at_k(y_scores, y_true, k=cfg.get("retrieval_k", 10))
+        recall_at_k = compute_recall_at_k(y_scores, y_true, k=cfg.get("retrieval_k", 10))
         history["train"]["loss"].append(total_loss)
         history["train"]["loss_recon"].append(total_loss_recon)
         history["train"]["loss_kl"].append(total_loss_kl)
         history["train"]["auc"].append(auc_score)
         history["train"]["average_precision"].append(avg_precision)
+        history["train"]["precision_at_k"].append(precision_at_k)
+        history["train"]["recall_at_k"].append(recall_at_k)
 
         # Validation data
         val_metrics = evaluate(val_data, model, loss_function, kl_beta=kl_beta, cfg=cfg)
@@ -234,10 +237,12 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         history["val"]["loss_kl"].append(val_metrics["loss_kl"])
         history["val"]["auc"].append(val_metrics["auc"])
         history["val"]["average_precision"].append(val_metrics["average_precision"])
+        history["val"]["precision_at_k"].append(val_metrics["precision_at_k"])
+        history["val"]["recall_at_k"].append(val_metrics["recall_at_k"])
 
         logger.info(f"Epoch: {epoch}")
-        logger.info(f"Train. Total Loss: {total_loss:.2f}, Rec.: {total_loss_recon:.2f}, KL: {total_loss_kl:.2f}, AUC: {auc_score:.2%}, AP: {avg_precision:.2%}")
-        logger.info(f"Val. Total Loss: {val_metrics['loss']:.2f}, Rec.: {val_metrics['loss_recon']:.2f}, KL: {val_metrics['loss_kl']:.2f}, AUC: {val_metrics['auc']:.2%}, AP: {val_metrics['average_precision']:.2%}")
+        logger.info(f"Train. Total Loss: {total_loss:.2f}, Rec.: {total_loss_recon:.2f}, KL: {total_loss_kl:.2f}, AUC: {auc_score:.2%}, AP: {avg_precision:.2%}, P@{cfg.get('retrieval_k',10)}: {precision_at_k:.2%}, R@{cfg.get('retrieval_k',10)}: {recall_at_k:.2%}")
+        logger.info(f"Val. Total Loss: {val_metrics['loss']:.2f}, Rec.: {val_metrics['loss_recon']:.2f}, KL: {val_metrics['loss_kl']:.2f}, AUC: {val_metrics['auc']:.2%}, AP: {val_metrics['average_precision']:.2%}, P@{cfg.get('retrieval_k',10)}: {val_metrics['precision_at_k']:.2%}, R@{cfg.get('retrieval_k',10)}: {val_metrics['recall_at_k']:.2%}")
 
         logger.debug(f"Num positive: {num_positive}; Num negatives: {num_negatives}; Negative Ratio: {num_negatives / (num_positive) + 1e-6:.2f}")
 
@@ -250,6 +255,8 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         best_model_cfg["epoch"] = epoch
         best_model_cfg["auc"] = val_metrics["auc"]
         best_model_cfg["average_precision"] = val_metrics["average_precision"]
+        best_model_cfg["precision_at_k"] = val_metrics["precision_at_k"]
+        best_model_cfg["recall_at_k"] = val_metrics["recall_at_k"]
 
 # Save the best model
 if cfg["save_model"]:
@@ -259,7 +266,7 @@ if cfg["save_model"]:
 ## Evaluation
 
 # Loss Curves
-fig, axs = plt.subplots(2, 3, figsize=(18, 8))
+fig, axs = plt.subplots(3, 3, figsize=(18, 12))
 
 # Loss
 axs[0][0].plot(history["train"]["loss"], label="Train")
@@ -296,6 +303,21 @@ axs[1][1].set_title("Average Precision")
 axs[1][1].set_xlabel("Epoch")
 axs[1][1].set_ylabel("Average Precision")
 
+
+# Precision@K
+axs[1][2].plot(history["train"]["precision_at_k"])
+axs[1][2].plot(history["val"]["precision_at_k"])
+axs[1][2].set_title(f"Precision@{cfg.get('retrieval_k',10)}")
+axs[1][2].set_xlabel("Epoch")
+axs[1][2].set_ylabel(f"Precision@{cfg.get('retrieval_k',10)}")
+
+# Recall@K
+axs[2][0].plot(history["train"]["recall_at_k"])
+axs[2][0].plot(history["val"]["recall_at_k"])
+axs[2][0].set_title(f"Recall@{cfg.get('retrieval_k',10)}")
+axs[2][0].set_xlabel("Epoch")
+axs[2][0].set_ylabel(f"Recall@{cfg.get('retrieval_k',10)}")
+
 # Set a single legend for the whole figure
 lines_labels = [axs[0][0].get_lines()[0], axs[0][0].get_lines()[1]]
 labels = ["Train", "Val"]
@@ -310,7 +332,7 @@ if cfg["tsne_visualization"]:
     # Load the best model for visualization
     model.load_state_dict(best_model_cfg["best_model"])
     user_embeddings, item_embeddings = get_embeddings(model)
-    tsne_visualization(user_embeddings, None, title="User Embeddings t-SNE", filename=PLOT_DIR / "user_embeddings_tsne.png")
-    tsne_visualization(item_embeddings, None, title="Item Embeddings t-SNE", filename=PLOT_DIR / "item_embeddings_tsne.png")
+    tsne_visualization(user_embeddings, None, title="User Embeddings t-SNE", filename=PLOT_DIR / "tsne_user_embeddings.png")
+    tsne_visualization(item_embeddings, None, title="Item Embeddings t-SNE", filename=PLOT_DIR / "tsne_item_embeddings.png")
 
 logger.info(f"Done")
