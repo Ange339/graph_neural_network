@@ -26,7 +26,7 @@ for handler in logging.root.handlers[:]:
 logging.basicConfig(
     filename='results.log',
     filemode='w',
-    level=logging.DEBUG,
+    level=logging.NOTSET,  # Capture all levels
     datefmt='%m-%d %H:%M:%S',
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 )
@@ -37,22 +37,23 @@ logger = logging.getLogger(__name__)
 
 ### Change configuration
 new_config = {
-    'epochs': 1,
+    'epochs': 2,
     "val_size": 0.2,
     "test_size": 0.2,
     "seed": 42,
     'n_layer': 1,
 
-    'encoder': "sage_encoder",
+    'encoder': "sage_encoder", # "sage_encoder", "gat_encoder"
+    'heads': 2,
     "skip_connection": 'sum',
     "dropout": 0.30,
     "batch_norm": True,
 
-    "negative_sampling_ratio": 30.0,
+    "negative_sampling_ratio": 1.0,
     'learning_rate': 0.001,
     'item_emb_dim': 128,
     'user_emb_dim': 128,
-    "negative_sampling_method": "pairwise_random",
+    "negative_sampling_method": "batch_random",
     "recon_loss": "bpr", # "binary", "bpr", "bce"
     'feature_linear_dim': 128,
     'hidden_channels': 128,

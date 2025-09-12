@@ -98,7 +98,7 @@ class GAE(nn.Module):
                 setattr(module, name, to_hetero(child, metadata, aggr=aggr))
             # Recurse for children of children
             else:
-                wrap_layers(child, metadata, aggr)
+                self._wrap_layers(child, metadata, aggr)
         return module
 
     def reparameterize(self, mu, logvar):
@@ -148,16 +148,16 @@ class GraphEncoderBase(nn.Module, ABC):
 
         # Hidden layers
         self.layers = nn.ModuleList()
-        self.layers.append(self._make_layer(in_channels, hidden_channels))
-        for _ in range(1, self.n_layer):
-            self.layers.append(self._make_layer(hidden_channels, hidden_channels))
+        self.layers.append(self._make_layer(in_channels, hidden_channels, batch_norm=batch_norm, skip_connection=skip_connection, dropout=dropout, heads=heads))
+        for _ in range(1, n_layer):
+            self.layers.append(self._make_layer(hidden_channels, hidden_channels, batch_norm=batch_norm, skip_connection=skip_connection, dropout=dropout, heads=heads))
 
         # Output layers
         if self.variational:
-            self.conv_mu = self._make_layer(hidden_channels, latent_dim, final=True)
-            self.conv_logvar = self._make_layer(hidden_channels, latent_dim, final=True)
+            self.conv_mu = self._make_layer(hidden_channels, latent_dim, batch_norm=batch_norm, skip_connection=None, dropout=0, heads=1, is_final_layer=True)
+            self.conv_logvar = self._make_layer(hidden_channels, latent_dim, batch_norm=batch_norm, skip_connection=None, dropout=0, heads=1, is_final_layer=True)
         else:
-            self.conv_out = self._make_layer(hidden_channels, latent_dim, final=True)
+            self.conv_out = self._make_layer(hidden_channels, latent_dim, batch_norm=batch_norm, skip_connection=skip_connection, dropout=0, heads=1, is_final_layer=True)
 
     @abstractmethod
     def _make_layer(self, in_channels, out_channels, batch_norm=True, skip='sum', dropout=0.3, heads=1, is_final_layer=False):
@@ -177,26 +177,28 @@ class GraphEncoderBase(nn.Module, ABC):
 
 
 class SageEncoder(GraphEncoderBase):
-    def _make_layer(self, in_channels, out_channels, batch_norm=True, skip='sum', dropout=0.3, heads=1, is_final_layer=False):
+    def _make_layer(self, in_channels, out_channels, batch_norm=True, skip_connection='sum', dropout=0.3, heads=1, is_final_layer=False):
         return SageLayer(
-            in_channels, out_channels,
+            in_channels=in_channels,
+            out_channels=out_channels,
             batch_norm=batch_norm,
-            skip_connection=self.skip_connection,
-            dropout=0 if final else self.dropout,
+            skip_connection=skip_connection,
+            dropout=0 if is_final_layer else dropout,
             heads=1,
-            is_final_layer=final
+            is_final_layer=is_final_layer
         )
 
 
 class GATEncoder(GraphEncoderBase):
-    def _make_layer(self, in_channels, out_channels, final=False):
+    def _make_layer(self, in_channels, out_channels, batch_norm=True, skip_connection='sum', dropout=0.3, heads=1, is_final_layer=False):
         return GATLayer(
-            in_channels, out_channels,
-            batch_norm=self.batch_norm,
-            skip_connection=self.skip_connection if not final else None,
-            dropout=0 if final else self.dropout,
-            heads=self.heads,
-            is_final_layer=final
+            in_channels=in_channels,
+            out_channels=out_channels,
+            batch_norm=batch_norm,
+            skip_connection=skip_connection if not is_final_layer else None,
+            dropout=0 if is_final_layer else dropout,
+            heads=heads,
+            is_final_layer=is_final_layer
         )
 
 
@@ -285,6 +287,23 @@ class InnerProductDecoder(nn.Module):
         if sigmoid:
             A_pred = torch.sigmoid(A_pred)
         return A_pred
+    
+    def batch_forward_all(self, z_user, z_item, sigmoid=True):
+        "Compute all pairwise interactions in a batched manner to save memory"
+        batch_size = 100  # Adjust based on memory constraints
+        num_users = z_user.size(0)
+        num_items = z_item.size(0)
+        z_item_t = z_item.T
+        preds = []
+        for start in range(0, num_users, batch_size):
+            end = min(start + batch_size, num_users)
+            batch_user = z_user[start:end]
+            batch_preds = torch.matmul(batch_user, z_item_t)
+            if sigmoid:
+                batch_preds = torch.sigmoid(batch_preds)
+            preds.append(batch_preds)
+
+        return torch.cat(preds, dim=0)
 
 
 

@@ -1,6 +1,8 @@
 batch_method: binary_link_neighbors
 batch_norm: true
-batch_size: 128
+batch_size: 512
+book_emb_dim: 1024
+book_feature_linear: true
 book_features:
 - name: textual_desc
 - aggr_fn: mean
@@ -11,46 +13,48 @@ decoder: inner_product_decoder
 descriptions_filename: descriptions_filtered.parquet
 dir: ../data_sample
 disjoint_train_ratio: 0.0
-dropout: 0.3
+dropout: 0.5
 edge_type: interactions
 embeddings_descriptions_filename: embeddings_descriptions_sbert_pt.parquet
 embeddings_reviews_filename: embeddings_reviews_sbert_pt.parquet
 encoder: sage_encoder
-epochs: 2
+epochs: 1
 eval_interval: 1
 feature_aggr_method: concat
-feature_linear_dim: 128
-heads: 2
-hidden_channels: 128
+feature_linear_dim: 64
+heads: 1
+hidden_channels: 512
 interactions_filename: interactions.parquet
-item_emb_dim: 128
+item_emb_dim: 64
 item_feature_linear: true
-kl_beta: 0.2
-kl_warmup_epoch: 30
+kl_beta: 1.0
+kl_warmup_epoch: 10
 language_filter: true
-latent_dim: 64
-learning_rate: 0.001
+latent_dim: 128
+learning_rate: 0.0005
+log_interval: 1
 n_layer: 1
-negative_sampling_method: batch_random
+negative_sampling_method: pairwise_random
 negative_sampling_ratio: 1.0
 negative_sampling_recurrence: epoch
+num_layers: 3
 num_neighbors:
-- 20
+- 10
 - 10
 opt_decay_rate: 0.1
 opt_decay_step: 20
-out_dir: output_sample
+out_dir: search_results\run_0911_2232_0
 patience: 50
 recon_loss: bpr
 retrieval_k: 300
 review_coreness_k: 5
 reviews_filename: reviews_filtered.parquet
 save_model: false
-seed: 42
+seed: 1
 skip_connection: sum
 test_size: 0.2
 tsne_visualization: false
-user_emb_dim: 128
+user_emb_dim: 2048
 user_feature_linear: true
 user_features:
 - aggr_fn: mean

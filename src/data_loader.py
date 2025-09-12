@@ -28,7 +28,7 @@ class GraphLoader:
         data = dataset.preprocess(data)
         data = text_embedding_processor.to_torch(data)
         graph_data = graph_builder.build(data)
-        return graph_data
+        return graph_data, data
 
 
 class Dataset:
@@ -78,7 +78,6 @@ class Dataset:
         if edge_type == "reads":
             interactions = interactions.filter(pl.col('is_read') == True)
 
-
         logger.info(f"Initial size. Users: {len(users)}, Books: {len(books)}, Total: {len(users) + len(books)}, Edges: {len(interactions)}, Density: {len(interactions) / (len(users) * len(books)):4%}")
 
         # Filter by degree.
@@ -91,9 +90,14 @@ class Dataset:
         books = books.filter(pl.col('review_coreness') >= review_coreness_k, pl.col('coreness') >= coreness_k)
         books = books.join(interactions.select(["book_id"]).unique(), on="book_id", how="inner") # Keep only books with interactions
 
-        ## Reindexing
+        ## Reindexing and save the mapping
         users = users.with_columns((pl.col('user_id').rank()-1).cast(pl.Int64).alias('user_id_hashed'))
         books = books.with_columns((pl.col('book_id').rank()-1).cast(pl.Int64).alias('book_id_hashed'))
+
+        user_id_map = users.select(['user_id', 'user_id_hashed']).rename({'user_id':'id', 'user_id_hashed':'new_id'}).with_columns(pl.lit('user').alias('type'))
+        book_id_map = books.select(['book_id', 'book_id_hashed']).rename({'book_id':'id', 'book_id_hashed':'new_id'}).with_columns(pl.lit('book').alias('type'))
+        id_map = pl.concat([user_id_map, book_id_map], how='vertical_relaxed')
+        id_map.write_csv(os.path.join(self.cfg['dir'], self.cfg.get('id_map_filename', 'id_map.csv')))
 
         ## Filter and add the new_index information for the rest of data
         interactions = interactions.join(users.select(["user_id", "user_id_hashed"]), on="user_id", how="inner")
@@ -101,6 +105,12 @@ class Dataset:
 
         logger.info(f"Filtered size. Users: {len(users)}, Books: {len(books)}, Total: {len(users) + len(books)}, Edges: {len(interactions)}, Density: {len(interactions) / (len(users) * len(books)):4%}")
 
+        user_degree = interactions.group_by('user_id').agg(pl.len().alias('degree')).sort('degree')
+        book_degree = interactions.group_by('book_id').agg(pl.len().alias('degree')).sort('degree')
+        logger.info(f"User degree. Min: {user_degree[0, 'degree']}, Max: {user_degree[-1, 'degree']}, Median: {user_degree[user_degree.height // 2, 'degree']}, Mean: {user_degree['degree'].mean():.2f}")
+        logger.info(f"Top 5 users by degree:\n{user_degree.sort('degree', descending=True).head(5)}")
+        logger.info(f"Book degree. Min: {book_degree[0, 'degree']}, Max: {book_degree[-1, 'degree']}, Median: {book_degree[book_degree.height // 2, 'degree']}, Mean: {book_degree['degree'].mean():.2f}")
+        logger.info(f"Top 5 books by degree:\n{book_degree.sort('degree', descending=True).head(5)}")
         embeddings_descriptions = embeddings_descriptions.join(books.select(["book_id", "book_id_hashed"]), on="book_id", how="inner")
         embeddings_reviews = embeddings_reviews.join(interactions.select(["book_id", "user_id", "user_id_hashed", "book_id_hashed"]), on=["book_id", "user_id"], how="inner")
 
@@ -212,6 +222,7 @@ class GraphBuilder():
             extractor_cls = EMB_FEATURE_REGISTRY[fconf["name"]]
             extractor = extractor_cls(**{k: v for k, v in fconf.items() if k != "name"})
             feat = extractor.build(data, "users")
+            logger.info(f"User Feature {fconf['name']} shape: {feat.shape if feat is not None else None}")
             if feat is not None:
                 user_feats.append(feat)
 
@@ -219,6 +230,7 @@ class GraphBuilder():
             extractor_cls = EMB_FEATURE_REGISTRY[fconf["name"]]
             extractor = extractor_cls(**{k: v for k, v in fconf.items() if k != "name"})
             feat = extractor.build(data, "books")
+            logger.info(f"Item Feature {fconf['name']} shape: {feat.shape if feat is not None else None}")
             if feat is not None:
                 book_feats.append(feat)
 
@@ -233,7 +245,12 @@ class GraphBuilder():
         
         graph_data = HeteroData()
         graph_data['user'].node_id = torch.arange(len(data['users']))
-        graph_data['item'].node_id = torch.arange(len(data['books']))
+        graph_data['item'].node_id = torch.arange(len(data['books'])) 
+
+        # Encode the genre information. They will not be used for training
+        graph_data['user'].genre = torch.tensor(data['users']['genre'].to_list())
+        graph_data['item'].genre = torch.tensor(data['books']['genre'].to_list())
+
         if user_x is not None:
             graph_data['user'].x = user_x
         if book_x is not None:

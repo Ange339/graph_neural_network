@@ -28,27 +28,12 @@ from src.loss import LossFunction
 from src.registry import MODEL_REGISTRY
 from src.utils import *
 
-
 # Configs
-
 DIR = pathlib.Path(__file__).parent.resolve()
-PLOT_DIR = DIR / "plots"
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 
-os.makedirs(PLOT_DIR, exist_ok=True)
-
-# if __name__ == "__main__":
-#     for handler in logging.root.handlers[:]:
-#         logging.root.removeHandler(handler)
-
-#     logging.basicConfig(
-#         filename=DIR / 'train.log',
-#         filemode='w',
-#         level=logging.DEBUG,
-#         datefmt='%m-%d %H:%M:%S',
-#         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-#     )
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -68,11 +53,12 @@ logger.info(pprint.pformat(cfg))
 
 
 ###### MAIN #####
-
+OUT_DIR = DIR / cfg.get("out_dir", "out_dir")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 # Prepare the data
 graph_loader = GraphLoader(cfg)
-graph_data = graph_loader.load()
+graph_data, data = graph_loader.load()
 
 # Split the data into train/val/test sets
 train_val_test_split = random_link_split(cfg)
@@ -85,6 +71,10 @@ logger.debug(f"Test: {test_data}")
 # batch loader
 batch_loader = BatchLoader(cfg)
 train_loader = batch_loader.load(train_data, shuffle=True)
+
+logging.info(f"Number of training batches: {len(train_loader)}")
+
+logging.info(next(iter(train_loader)))
 
 # val_loader = batch_loader.load(val_data, shuffle=False)
 # test_loader = batch_loader.load(test_data, shuffle=False)
@@ -138,13 +128,20 @@ optimizer = optim.AdamW(model.parameters(), lr=cfg['learning_rate'], weight_deca
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg['opt_decay_step'], gamma=cfg['opt_decay_rate'])
 
 ## Sampling settings
-negative_sampler = NegativeSampler(cfg, device=device)
+negative_sampler = NegativeSampler(cfg)
 
 ## Loss functions
 loss_function = LossFunction(cfg)
 variational = cfg.get("variational", True)
 kl_beta = cfg.get("kl_beta", 1.0)
 kl_warmup_epoch = cfg.get("kl_warmup_epoch", 0)
+
+c = 0 
+for batch in train_loader:
+    c += batch['user', 'interacts', 'item'].edge_index.size(1)
+
+logging.info(f"Number of edges for message passing: {c}")
+
 
 ########### TRAINING LOOP ###########
 for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
@@ -178,8 +175,14 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         ## Negative sampling
         negative_index, negative_labels = negative_sampler.sample(batch)
         num_negatives += negative_index.size(1)
-
         # Model decoding
+        # print("batch_size, user", batch["user"].num_nodes, "item", batch["item"].num_nodes)
+        # print("z_dict['user'].shape:", z_dict['user'].shape)
+        # print("z_dict['item'].shape:", z_dict['item'].shape)
+        # print("max positive_index[1]:", positive_index[1].max())
+        # print("min positive_index[1]:", positive_index[1].min())
+        # print("max negative_index[1]:", negative_index[1].max())
+        # print("min negative_index[1]:", negative_index[1].min())
         pos_preds = model.decode(z_dict['user'], z_dict['item'], positive_index)
         neg_preds = model.decode(z_dict['user'], z_dict['item'], negative_index)
         preds = torch.cat([pos_preds, neg_preds])
@@ -260,11 +263,10 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
 
 # Save the best model
 if cfg["save_model"]:
-    torch.save(best_model_cfg["best_model"], DIR / "best_model.pth")
+    torch.save(best_model_cfg["best_model"], OUT_DIR / "best_model.pth")
 
 
 ## Evaluation
-
 # Loss Curves
 fig, axs = plt.subplots(3, 3, figsize=(18, 12))
 
@@ -324,15 +326,15 @@ labels = ["Train", "Val"]
 fig.legend(lines_labels, labels, loc="upper right", fontsize="large")
 fig.suptitle("Training and Validation Metrics", fontsize=18)
 plt.tight_layout()
-plt.savefig(PLOT_DIR / "training_curves.png")
+plt.savefig(OUT_DIR / "training_curves.png")
 
-logger.info(f"Best model found at epoch {best_model_cfg['epoch']}, Val Loss: {best_model_cfg['loss']:.2f}, AUC: {best_model_cfg['auc']:.2%}, AP: {best_model_cfg['average_precision']:.2%}")
+logger.info(f"Best model found at epoch {best_model_cfg['epoch']}, Val Loss: {best_model_cfg['loss']:.2f}, AUC: {best_model_cfg['auc']:.2%}, AP: {best_model_cfg['average_precision']:.2%}, P@{cfg.get('retrieval_k',10)}: {best_model_cfg['precision_at_k']:.2%}, R@{cfg.get('retrieval_k',10)}: {best_model_cfg['recall_at_k']:.2%}")
 
 if cfg["tsne_visualization"]:
     # Load the best model for visualization
     model.load_state_dict(best_model_cfg["best_model"])
     user_embeddings, item_embeddings = get_embeddings(model)
-    tsne_visualization(user_embeddings, None, title="User Embeddings t-SNE", filename=PLOT_DIR / "tsne_user_embeddings.png")
-    tsne_visualization(item_embeddings, None, title="Item Embeddings t-SNE", filename=PLOT_DIR / "tsne_item_embeddings.png")
+    tsne_transform(user_embeddings, title="t-SNE User Embeddings", filename=OUT_DIR / "tsne_user_embeddings.png")
+    tsne_transform(item_embeddings, title="t-SNE Item Embeddings", filename=OUT_DIR / "tsne_item_embeddings.png")
 
 logger.info(f"Done")

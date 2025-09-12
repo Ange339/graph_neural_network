@@ -1,18 +1,10 @@
 import torch
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv, to_hetero, BatchNorm, Linear
 import torch.nn as nn
 import torch.nn.functional as F
-
-
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv, to_hetero, BatchNorm, Linear, Sequential
 from abc import ABC, abstractmethod
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import Linear, BatchNorm1d as BatchNorm
-from torch_geometric.nn import SAGEConv, GATConv
-from abc import ABC, abstractmethod
 
 
 class GNNLayer(nn.Module, ABC):
@@ -38,14 +30,17 @@ class GNNLayer(nn.Module, ABC):
         # Build convolution
         self.conv, conv_out_dim = self._build_conv(in_channels, out_channels, heads, dropout)
 
+        # If multiple heads and GATConv → fuse into out_channels
+        self.fuse_linear = Linear(-1, out_channels) if heads > 1 and isinstance(self.conv, GATConv) else None
+
         # BatchNorm (optional)
         self.batch_norm = BatchNorm(conv_out_dim) if batch_norm else None
 
         # Skip connection (optional)
         self.skip_linear = Linear(-1, conv_out_dim) if skip_connection else None
 
-        # Store actual output dim (important for GAT with multiple heads)
-        self.final_output_dim = conv_out_dim
+        # # Store actual output dim (important for GAT with multiple heads)
+        # self.final_output_dim = conv_out_dim
 
     @abstractmethod
     def _build_conv(self, in_channels, out_channels, heads, dropout):
@@ -59,6 +54,10 @@ class GNNLayer(nn.Module, ABC):
         # Graph convolution
         x = self.conv(x, edge_index)
 
+        # If multiple heads → fuse into out_channels
+        if self.fuse_linear:
+            x = self.fuse_linear(x)            
+        
         # Skip connection
         if self.skip_connection == 'sum':
             x = x + self.skip_linear(x_res)
@@ -95,15 +94,18 @@ class GATLayer(GNNLayer):
                            heads=heads, concat=True,
                            add_self_loops=False, dropout=dropout)
 
-        conv_out_dim = heads * out_channels
+        return gat_conv, out_channels
 
-        # If multiple heads → fuse into out_channels
-        if heads > 1:
-            fusion = Linear(-1, out_channels)
-            conv = nn.Sequential(gat_conv, fusion)
-            return conv, out_channels
-        else:
-            return gat_conv, out_channels
+        # conv_out_dim = heads * out_channels
+
+        # # If multiple heads → fuse into out_channels
+        # if heads > 1:
+        #     fusion = Linear(-1, out_channels)
+
+        #     conv = nn.Sequential(gat_conv, fusion)
+        #     return conv, out_channels
+        # else:
+        #     return gat_conv, out_channels
 
 
 

@@ -1,16 +1,18 @@
 import torch
 from torch_geometric.utils import negative_sampling
+import logging
 
+logger = logging.getLogger(__name__)
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class NegativeSampler:
-    def __init__(self, cfg, device='cpu'):
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.device = device
 
 
     def sample(self, data):
-        sampling_strategy = self.cfg.get('negative_sampling_strategy', 'batch_random')
+        sampling_strategy = self.cfg.get('negative_sampling_method', 'batch_random')
         if sampling_strategy == 'batch_random':
             return self.batch_random_sample(data)
         elif sampling_strategy == 'pairwise_random':
@@ -20,19 +22,25 @@ class NegativeSampler:
 
 
     def batch_random_sample(self, batch_data):
-        "Randomly sample negative examples from the batch dataset"
-        num_neg_samples = int(len(batch_data['user', 'interacts', 'item'].edge_label_index[0]) * self.cfg['negative_sampling_ratio'])
-        #logger.info(f"Number of negative samples: {num_neg_samples}")
+        "Custom negative sampling: generate user-item pairs not in positive set."
         edge_label_index = batch_data['user', 'interacts', 'item'].edge_label_index
-        negative_samples = negative_sampling(edge_label_index, num_neg_samples=num_neg_samples).to(self.device)
-        negative_samples_label = torch.zeros(negative_samples.size(1), dtype=torch.float32, device=self.device)
+        users = batch_data['user', 'interacts', 'item'].edge_label_index[0]
+        items = batch_data['user', 'interacts', 'item'].edge_label_index[1]
+        num_users = batch_data['user'].num_nodes
+        num_items = batch_data['item'].num_nodes
+        num_neg_samples = int(users.size(0) * self.cfg['negative_sampling_ratio'])
+        # Randomly sample user-item pairs. Given the sparsity of interactions, collisions with positive samples are rare.
+        negative_users = torch.randint(0, num_users, (num_neg_samples,), device=device)
+        negative_items = torch.randint(0, num_items, (num_neg_samples,), device=device)
+        negative_samples = torch.stack([negative_users, negative_items], dim=-1)
+        negative_samples_label = torch.zeros(negative_samples.size(1), dtype=torch.float32, device=device)
         return negative_samples, negative_samples_label
 
 
     def pairwise_random_sample(self, data):
         users, pos_items = data['user', 'interacts', 'item'].edge_index
         num_items = pos_items.max().item() + 1  # assumes items are 0..N-1
-
+        
         # Sample negatives for each user
         num_neg_samples = self.cfg['negative_sampling_ratio'] * num_items
 

@@ -1,82 +1,162 @@
-09-08 15:18:55 - INFO - __main__ - INFO:__main__:Configuration:
-09-08 15:18:55 - INFO - __main__ - INFO:__main__:{'batch_method': 'binary_link_neighbors',
-09-08 15:18:55 - INFO - __main__ -  'batch_norm': True,
-09-08 15:18:55 - INFO - __main__ -  'batch_size': 128,
-09-08 15:18:55 - INFO - __main__ -  'book_features': [{'degree_log_transform': True,
-09-08 15:18:55 - INFO - __main__ -                     'features': ['degree', 'coreness'],
-09-08 15:18:55 - INFO - __main__ -                     'name': 'topo'},
-09-08 15:18:55 - INFO - __main__ -                    {'name': 'textual_desc'},
-09-08 15:18:55 - INFO - __main__ -                    {'aggr_fn': 'mean', 'name': 'textual_reviews'}],
-09-08 15:18:55 - INFO - __main__ -  'books_filename': 'books_filtered.parquet',
-09-08 15:18:55 - INFO - __main__ -  'coreness_k': 10,
-09-08 15:18:55 - INFO - __main__ -  'decoder': 'inner_product_decoder',
-09-08 15:18:55 - INFO - __main__ -  'descriptions_filename': 'descriptions_filtered.parquet',
-09-08 15:18:55 - INFO - __main__ -  'dir': '../data_sample',
-09-08 15:18:55 - INFO - __main__ -  'disjoint_train_ratio': 0.0,
-09-08 15:18:55 - INFO - __main__ -  'dropout': 0.3,
-09-08 15:18:55 - INFO - __main__ -  'edge_type': 'reads',
-09-08 15:18:55 - INFO - __main__ -  'embeddings_descriptions_filename': 'embeddings_descriptions_sbert_pt.parquet',
-09-08 15:18:55 - INFO - __main__ -  'embeddings_reviews_filename': 'embeddings_reviews_sbert_pt.parquet',
-09-08 15:18:55 - INFO - __main__ -  'encoder': 'sage_encoder',
-09-08 15:18:55 - INFO - __main__ -  'epochs': 1,
-09-08 15:18:55 - INFO - __main__ -  'eval_interval': 1,
-09-08 15:18:55 - INFO - __main__ -  'feature_aggr_method': 'concat',
-09-08 15:18:55 - INFO - __main__ -  'feature_linear_dim': 128,
-09-08 15:18:55 - INFO - __main__ -  'hidden_channels': 128,
-09-08 15:18:55 - INFO - __main__ -  'interactions_filename': 'interactions.parquet',
-09-08 15:18:55 - INFO - __main__ -  'item_emb_dim': 128,
-09-08 15:18:55 - INFO - __main__ -  'item_feature_linear': True,
-09-08 15:18:55 - INFO - __main__ -  'kl_beta': 0.2,
-09-08 15:18:55 - INFO - __main__ -  'kl_warmup_epoch': 30,
-09-08 15:18:55 - INFO - __main__ -  'language_filter': True,
-09-08 15:18:55 - INFO - __main__ -  'latent_dim': 64,
-09-08 15:18:55 - INFO - __main__ -  'learning_rate': 0.001,
-09-08 15:18:55 - INFO - __main__ -  'n_layer': 1,
-09-08 15:18:55 - INFO - __main__ -  'negative_sampling_method': 'pairwise_random',
-09-08 15:18:55 - INFO - __main__ -  'negative_sampling_ratio': 30.0,
-09-08 15:18:55 - INFO - __main__ -  'negative_sampling_recurrence': 'epoch',
-09-08 15:18:55 - INFO - __main__ -  'num_neighbors': [10, 10],
-09-08 15:18:55 - INFO - __main__ -  'opt_decay_rate': 0.1,
-09-08 15:18:55 - INFO - __main__ -  'opt_decay_step': 20,
-09-08 15:18:55 - INFO - __main__ -  'patience': 50,
-09-08 15:18:55 - INFO - __main__ -  'recon_loss': 'bpr',
-09-08 15:18:55 - INFO - __main__ -  'retrieval_k': 300,
-09-08 15:18:55 - INFO - __main__ -  'review_coreness_k': 5,
-09-08 15:18:55 - INFO - __main__ -  'reviews_filename': 'reviews_filtered.parquet',
-09-08 15:18:55 - INFO - __main__ -  'save_model': False,
-09-08 15:18:55 - INFO - __main__ -  'seed': 42,
-09-08 15:18:55 - INFO - __main__ -  'skip_connection': 'sum',
-09-08 15:18:55 - INFO - __main__ -  'test_size': 0.2,
-09-08 15:18:55 - INFO - __main__ -  'tsne_visualization': False,
-09-08 15:18:55 - INFO - __main__ -  'user_emb_dim': 128,
-09-08 15:18:55 - INFO - __main__ -  'user_feature_linear': True,
-09-08 15:18:55 - INFO - __main__ -  'user_features': [{'degree_log_transform': True,
-09-08 15:18:55 - INFO - __main__ -                     'features': ['degree', 'coreness'],
-09-08 15:18:55 - INFO - __main__ -                     'name': 'topo'},
-09-08 15:18:55 - INFO - __main__ -                    {'aggr_fn': 'mean', 'name': 'textual_reviews'}],
-09-08 15:18:55 - INFO - __main__ -  'users_filename': 'users_filtered.parquet',
-09-08 15:18:55 - INFO - __main__ -  'val_size': 0.2,
-09-08 15:18:55 - INFO - __main__ -  'variational': True,
-09-08 15:18:55 - INFO - __main__ -  'weight_decay': 1e-05}
-09-08 15:18:56 - INFO - __main__ - INFO:src.data_loader:Edge type: reads
-09-08 15:18:56 - INFO - __main__ - INFO:src.data_loader:Initial size. Users: 43807, Books: 236065, Total: 279872, Edges: 559839, Density: 0.005414%
-09-08 15:18:56 - INFO - __main__ - INFO:src.data_loader:Filtered size. Users: 1494, Books: 1373, Total: 2867, Edges: 41670, Density: 2.031432%
-09-08 15:18:56 - INFO - __main__ - INFO:src.data_loader:Initial textual embeddings size. Descriptions: 1373, Reviews: 17732, Total: 19105
-09-08 15:18:56 - INFO - __main__ - INFO:src.data_loader:Filtered textual embeddings size. Descriptions: 1373, Reviews: 16960, Total: 18333
-09-08 15:18:56 - INFO - __main__ - /home/3121346/.local/lib/python3.12/site-packages/torch_geometric/sampler/neighbor_sampler.py:61: UserWarning: Using 'NeighborSampler' without a 'pyg-lib' installation is deprecated and will be removed soon. Please install 'pyg-lib' for accelerated neighborhood sampling
-09-08 15:18:56 - INFO - __main__ -   warnings.warn(f"Using '{self.__class__.__name__}' without a "
-09-08 15:18:58 - INFO - __main__ - Traceback (most recent call last):
-09-08 15:18:58 - INFO - __main__ -   File "/home/3121346/thesis/graph_neural_network/train.py", line 106, in <module>
-09-08 15:18:58 - INFO - __main__ -     model = GAE(
-09-08 15:18:58 - INFO - __main__ -             ^^^^
-09-08 15:18:58 - INFO - __main__ -   File "/home/3121346/thesis/graph_neural_network/model.py", line 61, in __init__
-09-08 15:18:58 - INFO - __main__ -     self.encoder = encoder((-1, -1), hidden_channels, latent_dim, cfg)
-09-08 15:18:58 - INFO - __main__ -                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-09-08 15:18:58 - INFO - __main__ -   File "/home/3121346/thesis/graph_neural_network/model.py", line 152, in __init__
-09-08 15:18:58 - INFO - __main__ -     self.layers.append(self._make_layer(in_channels, hidden_channels))
-09-08 15:18:58 - INFO - __main__ -                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-09-08 15:18:58 - INFO - __main__ -   File "/home/3121346/thesis/graph_neural_network/model.py", line 182, in _make_layer
-09-08 15:18:58 - INFO - __main__ -     return SageLayer(
-09-08 15:18:58 - INFO - __main__ -            ^^^^^^^^^^
-09-08 15:18:58 - INFO - __main__ - TypeError: GNNLayer.__init__() got an unexpected keyword argument 'skip'
-09-08 15:18:59 - ERROR - __main__ - Subprocess exited with code 1
+09-12 00:01:12 - INFO - __main__ - INFO:__main__:Configuration:
+09-12 00:01:12 - INFO - __main__ - INFO:__main__:{'batch_method': 'binary_link_neighbors',
+09-12 00:01:12 - INFO - __main__ -  'batch_norm': True,
+09-12 00:01:12 - INFO - __main__ -  'batch_size': 128,
+09-12 00:01:12 - INFO - __main__ -  'book_features': [{'name': 'textual_desc'},
+09-12 00:01:12 - INFO - __main__ -                    {'aggr_fn': 'mean', 'name': 'textual_reviews'}],
+09-12 00:01:12 - INFO - __main__ -  'books_filename': 'books_filtered.parquet',
+09-12 00:01:12 - INFO - __main__ -  'coreness_k': 5,
+09-12 00:01:12 - INFO - __main__ -  'decoder': 'inner_product_decoder',
+09-12 00:01:12 - INFO - __main__ -  'descriptions_filename': 'descriptions_filtered.parquet',
+09-12 00:01:12 - INFO - __main__ -  'dir': '../data_sample',
+09-12 00:01:12 - INFO - __main__ -  'disjoint_train_ratio': 0.0,
+09-12 00:01:12 - INFO - __main__ -  'dropout': 0.3,
+09-12 00:01:12 - INFO - __main__ -  'edge_type': 'interactions',
+09-12 00:01:12 - INFO - __main__ -  'embeddings_descriptions_filename': 'embeddings_descriptions_sbert_pt.parquet',
+09-12 00:01:12 - INFO - __main__ -  'embeddings_reviews_filename': 'embeddings_reviews_sbert_pt.parquet',
+09-12 00:01:12 - INFO - __main__ -  'encoder': 'sage_encoder',
+09-12 00:01:12 - INFO - __main__ -  'epochs': 2,
+09-12 00:01:12 - INFO - __main__ -  'eval_interval': 1,
+09-12 00:01:12 - INFO - __main__ -  'feature_aggr_method': 'concat',
+09-12 00:01:12 - INFO - __main__ -  'feature_linear_dim': 128,
+09-12 00:01:12 - INFO - __main__ -  'heads': 2,
+09-12 00:01:12 - INFO - __main__ -  'hidden_channels': 128,
+09-12 00:01:12 - INFO - __main__ -  'interactions_filename': 'interactions.parquet',
+09-12 00:01:12 - INFO - __main__ -  'item_emb_dim': 128,
+09-12 00:01:12 - INFO - __main__ -  'item_feature_linear': True,
+09-12 00:01:12 - INFO - __main__ -  'kl_beta': 0.2,
+09-12 00:01:12 - INFO - __main__ -  'kl_warmup_epoch': 30,
+09-12 00:01:12 - INFO - __main__ -  'language_filter': True,
+09-12 00:01:12 - INFO - __main__ -  'latent_dim': 64,
+09-12 00:01:12 - INFO - __main__ -  'learning_rate': 0.001,
+09-12 00:01:12 - INFO - __main__ -  'n_layer': 1,
+09-12 00:01:12 - INFO - __main__ -  'negative_sampling_method': 'batch_random',
+09-12 00:01:12 - INFO - __main__ -  'negative_sampling_ratio': 1.0,
+09-12 00:01:12 - INFO - __main__ -  'negative_sampling_recurrence': 'epoch',
+09-12 00:01:12 - INFO - __main__ -  'num_neighbors': [20, 10],
+09-12 00:01:12 - INFO - __main__ -  'opt_decay_rate': 0.1,
+09-12 00:01:12 - INFO - __main__ -  'opt_decay_step': 20,
+09-12 00:01:12 - INFO - __main__ -  'out_dir': 'output_sample',
+09-12 00:01:12 - INFO - __main__ -  'patience': 50,
+09-12 00:01:12 - INFO - __main__ -  'recon_loss': 'bpr',
+09-12 00:01:12 - INFO - __main__ -  'retrieval_k': 300,
+09-12 00:01:12 - INFO - __main__ -  'review_coreness_k': 5,
+09-12 00:01:12 - INFO - __main__ -  'reviews_filename': 'reviews_filtered.parquet',
+09-12 00:01:12 - INFO - __main__ -  'save_model': False,
+09-12 00:01:12 - INFO - __main__ -  'seed': 42,
+09-12 00:01:12 - INFO - __main__ -  'skip_connection': 'sum',
+09-12 00:01:12 - INFO - __main__ -  'test_size': 0.2,
+09-12 00:01:12 - INFO - __main__ -  'tsne_visualization': False,
+09-12 00:01:12 - INFO - __main__ -  'user_emb_dim': 128,
+09-12 00:01:12 - INFO - __main__ -  'user_feature_linear': True,
+09-12 00:01:12 - INFO - __main__ -  'user_features': [{'aggr_fn': 'mean', 'name': 'textual_reviews'}],
+09-12 00:01:12 - INFO - __main__ -  'users_filename': 'users_filtered.parquet',
+09-12 00:01:12 - INFO - __main__ -  'val_size': 0.2,
+09-12 00:01:12 - INFO - __main__ -  'variational': True,
+09-12 00:01:12 - INFO - __main__ -  'weight_decay': 1e-05}
+09-12 00:01:15 - INFO - __main__ - INFO:src.data_loader:Edge type: interactions
+09-12 00:01:15 - INFO - __main__ - INFO:src.data_loader:Initial size. Users: 69490, Books: 407511, Total: 477001, Edges: 2066968, Density: 0.007299%
+09-12 00:01:15 - INFO - __main__ - INFO:src.data_loader:Filtered size. Users: 2454, Books: 2248, Total: 4702, Edges: 117486, Density: 2.129684%
+09-12 00:01:15 - INFO - __main__ - INFO:src.data_loader:Initial textual embeddings size. Descriptions: 2248, Reviews: 30635, Total: 32883
+09-12 00:01:15 - INFO - __main__ - INFO:src.data_loader:Filtered textual embeddings size. Descriptions: 2248, Reviews: 29285, Total: 31533
+09-12 00:01:16 - INFO - __main__ - INFO:src.data_loader:User Feature textual_reviews shape: torch.Size([2454, 384])
+09-12 00:01:16 - INFO - __main__ - INFO:src.data_loader:Item Feature textual_desc shape: torch.Size([2248, 384])
+09-12 00:01:16 - INFO - __main__ - INFO:src.data_loader:Item Feature textual_reviews shape: torch.Size([2248, 384])
+09-12 00:01:16 - INFO - __main__ - INFO:__main__:Train: HeteroData(
+09-12 00:01:16 - INFO - __main__ -   user={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2454],
+09-12 00:01:16 - INFO - __main__ -     genre=[2454],
+09-12 00:01:16 - INFO - __main__ -     x=[2454, 384],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   item={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2248],
+09-12 00:01:16 - INFO - __main__ -     genre=[2248],
+09-12 00:01:16 - INFO - __main__ -     x=[2248, 768],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (user, interacts, item)={
+09-12 00:01:16 - INFO - __main__ -     edge_index=[2, 70492],
+09-12 00:01:16 - INFO - __main__ -     edge_label=[70492],
+09-12 00:01:16 - INFO - __main__ -     edge_label_index=[2, 70492],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (item, rev_interacts, user)={ edge_index=[2, 70492] }
+09-12 00:01:16 - INFO - __main__ - )
+09-12 00:01:16 - INFO - __main__ - INFO:__main__:Val: HeteroData(
+09-12 00:01:16 - INFO - __main__ -   user={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2454],
+09-12 00:01:16 - INFO - __main__ -     genre=[2454],
+09-12 00:01:16 - INFO - __main__ -     x=[2454, 384],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   item={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2248],
+09-12 00:01:16 - INFO - __main__ -     genre=[2248],
+09-12 00:01:16 - INFO - __main__ -     x=[2248, 768],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (user, interacts, item)={
+09-12 00:01:16 - INFO - __main__ -     edge_index=[2, 70492],
+09-12 00:01:16 - INFO - __main__ -     edge_label=[46994],
+09-12 00:01:16 - INFO - __main__ -     edge_label_index=[2, 46994],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (item, rev_interacts, user)={ edge_index=[2, 70492] }
+09-12 00:01:16 - INFO - __main__ - )
+09-12 00:01:16 - INFO - __main__ - INFO:__main__:Test: HeteroData(
+09-12 00:01:16 - INFO - __main__ -   user={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2454],
+09-12 00:01:16 - INFO - __main__ -     genre=[2454],
+09-12 00:01:16 - INFO - __main__ -     x=[2454, 384],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   item={
+09-12 00:01:16 - INFO - __main__ -     node_id=[2248],
+09-12 00:01:16 - INFO - __main__ -     genre=[2248],
+09-12 00:01:16 - INFO - __main__ -     x=[2248, 768],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (user, interacts, item)={
+09-12 00:01:16 - INFO - __main__ -     edge_index=[2, 93989],
+09-12 00:01:16 - INFO - __main__ -     edge_label=[46994],
+09-12 00:01:16 - INFO - __main__ -     edge_label_index=[2, 46994],
+09-12 00:01:16 - INFO - __main__ -   },
+09-12 00:01:16 - INFO - __main__ -   (item, rev_interacts, user)={ edge_index=[2, 93989] }
+09-12 00:01:16 - INFO - __main__ - )
+09-12 00:01:16 - INFO - __main__ - C:\Users\angel\anaconda3\envs\pyg\lib\site-packages\torch_geometric\nn\fx.py:132: UserWarning: Found function 'dropout' with keyword argument 'training'. During FX tracing, this will likely be baked in as a constant value. Consider replacing this function by a module to properly encapsulate its training flag.
+09-12 00:01:16 - INFO - __main__ -   warnings.warn(f"Found function '{node.name}' with keyword "
+09-12 00:01:16 - INFO - __main__ - INFO:root:Model summary:
+09-12 00:01:16 - INFO - __main__ - INFO:root:GAE(
+09-12 00:01:16 - INFO - __main__ -   (user_embedding): Embedding(2454, 128)
+09-12 00:01:16 - INFO - __main__ -   (item_embedding): Embedding(2248, 128)
+09-12 00:01:16 - INFO - __main__ -   (user_feature_linear): Linear(in_features=384, out_features=128, bias=True)
+09-12 00:01:16 - INFO - __main__ -   (item_feature_linear): Linear(in_features=768, out_features=128, bias=True)
+09-12 00:01:16 - INFO - __main__ -   (encoder): SageEncoder(
+09-12 00:01:16 - INFO - __main__ -     (layers): ModuleList(
+09-12 00:01:16 - INFO - __main__ -       (0): GraphModule(
+09-12 00:01:16 - INFO - __main__ -         (conv): ModuleDict(
+09-12 00:01:16 - INFO - __main__ -           (user__interacts__item): SAGEConv((-1, -1), 128, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -           (item__rev_interacts__user): SAGEConv((-1, -1), 128, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -         )
+09-12 00:01:16 - INFO - __main__ -         (skip_linear): ModuleDict(
+09-12 00:01:16 - INFO - __main__ -           (user): Linear(-1, 128, bias=True)
+09-12 00:01:16 - INFO - __main__ -           (item): Linear(-1, 128, bias=True)
+09-12 00:01:16 - INFO - __main__ -         )
+09-12 00:01:16 - INFO - __main__ -         (batch_norm): ModuleDict(
+09-12 00:01:16 - INFO - __main__ -           (user): BatchNorm(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+09-12 00:01:16 - INFO - __main__ -           (item): BatchNorm(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+09-12 00:01:16 - INFO - __main__ -         )
+09-12 00:01:16 - INFO - __main__ -       )
+09-12 00:01:16 - INFO - __main__ -     )
+09-12 00:01:16 - INFO - __main__ -     (conv_mu): GraphModule(
+09-12 00:01:16 - INFO - __main__ -       (conv): ModuleDict(
+09-12 00:01:16 - INFO - __main__ -         (user__interacts__item): SAGEConv(128, 64, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -         (item__rev_interacts__user): SAGEConv(128, 64, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -       )
+09-12 00:01:16 - INFO - __main__ -       (batch_norm): BatchNorm(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+09-12 00:01:16 - INFO - __main__ -     )
+09-12 00:01:16 - INFO - __main__ -     (conv_logvar): GraphModule(
+09-12 00:01:16 - INFO - __main__ -       (conv): ModuleDict(
+09-12 00:01:16 - INFO - __main__ -         (user__interacts__item): SAGEConv(128, 64, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -         (item__rev_interacts__user): SAGEConv(128, 64, aggr=mean)
+09-12 00:01:16 - INFO - __main__ -       )
+09-12 00:01:16 - INFO - __main__ -       (batch_norm): BatchNorm(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+09-12 00:01:16 - INFO - __main__ -     )
+09-12 00:01:16 - INFO - __main__ -   )
+09-12 00:01:16 - INFO - __main__ -   (decoder): InnerProductDecoder()
+09-12 00:01:16 - INFO - __main__ - )
+09-12 00:01:21 - INFO - __main__ - Training:   0%|          | 0/2 [00:00<?, ?Epochs/s]
+09-12 00:01:22 - ERROR - __main__ - Subprocess exited with code 3221226356

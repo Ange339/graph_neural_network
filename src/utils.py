@@ -7,6 +7,7 @@ from torchmetrics.classification import AveragePrecision, AUROC
 from torch_geometric.utils import negative_sampling
 
 from sklearn.manifold import TSNE
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -61,6 +62,7 @@ def validate_edge_indices(data):
     if len(intersection) > 0:
         logger.warning(f"Warning: Overlapping edges found between edge_index and edge_label_index")
         logger.info(f"Overlapping edges size: {len(intersection)}")
+
 
 
 
@@ -232,19 +234,23 @@ def evaluate(data, model, loss_functions, kl_beta, cfg):
 
 
 ## Visualization
+## Obtain embeddings from trained model
+@torch.no_grad()
 def get_embeddings(model):
     if isinstance(model, torch.nn.DataParallel):
         model = model.module
-
     user_embeddings = model.user_embedding.weight.detach().cpu().numpy()
     item_embeddings = model.item_embedding.weight.detach().cpu().numpy()
     return user_embeddings, item_embeddings
 
-def tsne_visualization(embeddings, labels, title="t-SNE Visualization", filename=None):
+def tsne_transform(embeddings, title, filename):
     tsne = TSNE(n_components=2, random_state=42)
     embeddings_2d = tsne.fit_transform(embeddings)
 
     plt.figure(figsize=(10, 8))
-    sns.scatterplot(x=embeddings_2d[:,0], y=embeddings_2d[:,1], hue=labels, palette="viridis", legend="full", alpha=0.7)
+    sns.scatterplot(x=embeddings_2d[:, 0], y=embeddings_2d[:, 1], alpha=0.7)
     plt.title(title)
     plt.savefig(filename)
+    plt.close()
+
+    return embeddings_2d

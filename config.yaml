@@ -1,5 +1,6 @@
 # Data directory
 dir: ../data_sample
+out_dir: output_sample
 books_filename: books_filtered.parquet
 users_filename: users_filtered.parquet
 interactions_filename: interactions.parquet
@@ -11,38 +12,38 @@ embeddings_reviews_filename: embeddings_reviews_sbert_pt.parquet
 
 # Processing settings
 review_coreness_k: 5
-coreness_k: 10
+coreness_k: 5
 language_filter: True
-edge_type: reads # "interactions", "reads", "rates"
+edge_type: interactions # "interactions", "reads", "rates"
 
 
 # Embedding feature strategies
 user_features:
-  - name: topo
-    features: ["degree", "coreness"]
-    degree_log_transform: true
+  # - name: topo
+  #   features: ["degree", "coreness"]
+  #   degree_log_transform: true
   - name: textual_reviews
     aggr_fn: mean
 
 book_features:
-  - name: topo
-    features: ["degree", "coreness"]
-    degree_log_transform: true
+  # - name: topo
+  #   features: ["degree", "coreness"]
+  #   degree_log_transform: true
   - name: textual_desc
   - name: textual_reviews
     aggr_fn: mean
 
 
 # Splitting settings
-seed: 1
+seed: 42
 val_size: 0.2
 test_size: 0.2
 disjoint_train_ratio: 0.0 # set to 0.0 for transductive learning
 
 # Batch sampling settings
-batch_size: 128
-batch_method: "binary_link_neighbors"
-num_neighbors: [10, 10] # N_users, N_Items
+batch_size: 1024
+batch_method: "binary_link_neighbors" # "binary_link_neighbors", "node_neighbors"
+num_neighbors: [20, 10]
 
 # Model hyperparameters
 hidden_channels: 32
@@ -55,18 +56,19 @@ item_feature_linear: true
 feature_linear_dim: 64
 feature_aggr_method: "concat" # "concat", "add", "mean", "max"
 dropout: 0.5
-skip_connection: None # "sum", "concat", None
+skip_connection: null # "sum", "concat", None
 batch_norm: false
+heads: 2
 encoder: sage_encoder
 decoder: inner_product_decoder
 variational: true
 
 # Training settings
-negative_sampling_method: "pairwise_random" # "batch_random",  "pairwise_random"
+negative_sampling_method: "batch_random" # "batch_random",  "pairwise_random"
 negative_sampling_recurrence: "epoch" # "epoch", "fixed"
 negative_sampling_ratio: 1.0
 retrieval_k: 300
-epochs: 1
+epochs: 0
 learning_rate: 0.01
 weight_decay: 0.00001
 opt_decay_step: 20
@@ -76,5 +78,5 @@ kl_beta: 1.0
 kl_warmup_epoch: 50
 eval_interval: 1
 patience: 50
-save_model: false
+save_model: true
 tsne_visualization: true
