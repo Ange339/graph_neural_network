@@ -6,7 +6,7 @@ class LossFunction:
         self.cfg = cfg
     
     def reconstruction_loss(self, preds, edge_label):
-        loss_type = self.cfg.get('reconstruction_loss', "binary")
+        loss_type = self.cfg.get('recon_loss', "binary")
         if loss_type == "binary":
             return self.binary_loss(preds, edge_label)
         elif loss_type == "bpr":
@@ -61,12 +61,10 @@ class LossFunction:
         pos_preds = preds[pos_mask]
         neg_preds = preds[~pos_mask]
 
-        # Create all pairwise combinations of positive and negative predictions
-        pos_preds_expanded = pos_preds.view(-1, 1)  # Shape: (num_pos, 1)
-        neg_preds_expanded = neg_preds.view(1, -1)  # Shape: (1, num_neg)
+        pos_preds_expanded = pos_preds.repeat(neg_preds.size(0) // pos_preds.size(0))
 
         # Compute the difference between positive and negative predictions
-        diff = pos_preds_expanded - neg_preds_expanded  # Shape: (num_pos, num_neg)
+        diff = pos_preds_expanded - neg_preds  # Shape: (num_pos, num_neg)
 
         # Apply the BPR loss formula
         loss = -torch.log(torch.sigmoid(diff) + EPS).mean()

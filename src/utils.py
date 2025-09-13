@@ -30,7 +30,7 @@ def random_link_split(cfg):
         num_val=cfg.get("val_size", 0.1),
         num_test=cfg.get("test_size", 0.1),
         disjoint_train_ratio=cfg.get("disjoint_train_ratio", 0.0),
-        neg_sampling_ratio=cfg['negative_sampling_ratio'], # This is only for the validation/testing purpose
+        neg_sampling_ratio=0, # This is only for the validation/testing purpose --> disable it 
         add_negative_train_samples=False, # We will add negative samples with a custom sampler for the training data
         edge_types=("user", "interacts", "item"),
         rev_edge_types=("item", "rev_interacts", "user"),

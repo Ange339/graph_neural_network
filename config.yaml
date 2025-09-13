@@ -41,7 +41,7 @@ test_size: 0.2
 disjoint_train_ratio: 0.0 # set to 0.0 for transductive learning
 
 # Batch sampling settings
-batch_size: 1024
+batch_size: 512
 batch_method: "binary_link_neighbors" # "binary_link_neighbors", "node_neighbors"
 num_neighbors: [20, 10]
 
@@ -66,9 +66,9 @@ variational: true
 # Training settings
 negative_sampling_method: "batch_random" # "batch_random",  "pairwise_random"
 negative_sampling_recurrence: "epoch" # "epoch", "fixed"
-negative_sampling_ratio: 1.0
+negative_sampling_ratio: 30
 retrieval_k: 300
-epochs: 0
+epochs: 1
 learning_rate: 0.01
 weight_decay: 0.00001
 opt_decay_step: 20
@@ -78,5 +78,5 @@ kl_beta: 1.0
 kl_warmup_epoch: 50
 eval_interval: 1
 patience: 50
-save_model: true
-tsne_visualization: true
+save_model: false
+tsne_visualization: false
