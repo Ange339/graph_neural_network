@@ -1,5 +1,8 @@
 import torch
+import logging
+import torch.nn.functional as F
 
+logger = logging.getLogger(__name__)
 
 class LossFunction:
     def __init__(self, cfg):
@@ -64,10 +67,10 @@ class LossFunction:
         pos_preds_expanded = pos_preds.repeat(neg_preds.size(0) // pos_preds.size(0))
 
         # Compute the difference between positive and negative predictions
-        diff = pos_preds_expanded - neg_preds  # Shape: (num_pos, num_neg)
+        diff = pos_preds_expanded - neg_preds  # Shape: 
 
         # Apply the BPR loss formula
-        loss = -torch.log(torch.sigmoid(diff) + EPS).mean()
+        loss = F.softplus(-diff).mean()  # -log(sigmoid(x)) = softplus(-x)
         return loss
 
 

@@ -28,13 +28,12 @@ class NegativeSampler:
             neg_edge_index = sampling_func(data, mask, neg_edge_index[0], neg_edge_index[1])
             mask = self.collision_check(pos_edge_index, neg_edge_index)
             i += 1
-        logging.debug(f"Positive edges: {pos_edge_index[:,:10]} ...")  # Log first 10 positive edges
-        logging.debug(f"Negative edges: {neg_edge_index[:,:10]} ...")  # Log first 10 negative edges
-
-        uniq_cols, counts = torch.unique(neg_edge_index, dim=1, return_counts=True)
-        logging.debug(uniq_cols)
-        logging.debug(f"N. unique edges: {uniq_cols.size(1)/neg_edge_index.size(1):%}")
-        logging.debug(f"Negative sampling completed in {i+1} attempts. Number of false negatives: {mask.sum().item()}") if i > 0 else None
+        # logging.debug(f"Positive edges: {pos_edge_index[:,:10]} ...")  # Log first 10 positive edges
+        # logging.debug(f"Negative edges: {neg_edge_index[:,:10]} ...")  # Log first 10 negative edges
+        # uniq_cols, counts = torch.unique(neg_edge_index, dim=1, return_counts=True)
+        # logging.debug(uniq_cols)
+        # logging.debug(f"N. unique edges: {uniq_cols.size(1)/neg_edge_index.size(1):%}")
+        # logging.debug(f"Negative sampling completed in {i+1} attempts. Number of false negatives: {mask.sum().item()}") if i > 0 else None
         neg_edge_label = torch.zeros(neg_edge_index.size(1), dtype=torch.float32, device=device)
         return neg_edge_index, neg_edge_label
 

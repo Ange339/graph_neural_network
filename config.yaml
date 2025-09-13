@@ -57,7 +57,7 @@ feature_linear_dim: 64
 feature_aggr_method: "concat" # "concat", "add", "mean", "max"
 dropout: 0.5
 skip_connection: null # "sum", "concat", None
-batch_norm: false
+batch_norm: true
 heads: 2
 encoder: sage_encoder
 decoder: inner_product_decoder
@@ -68,15 +68,15 @@ negative_sampling_method: "batch_random" # "batch_random",  "pairwise_random"
 negative_sampling_recurrence: "epoch" # "epoch", "fixed"
 negative_sampling_ratio: 30
 retrieval_k: 300
-epochs: 1
+epochs: 50
 learning_rate: 0.01
 weight_decay: 0.00001
 opt_decay_step: 20
 opt_decay_rate: 0.1
-recon_loss: "bpr" # "binary", "bpr", "bce"
+recon_loss: "binary" # "binary", "bpr", "bce"
 kl_beta: 1.0
 kl_warmup_epoch: 50
 eval_interval: 1
 patience: 50
-save_model: false
-tsne_visualization: false
+save_model: true
+tsne_visualization: true
