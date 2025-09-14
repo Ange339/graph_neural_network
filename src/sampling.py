@@ -81,7 +81,7 @@ class NegativeSampler:
         
         num_neg_samples = mask.sum().item()
         if negative_items is None:
-            negative_users = users.repeat(num_neg_samples // users.size(0))
+            negative_users = users.repeat_interleave(num_neg_samples // users.size(0))
             negative_items = torch.randint(0, num_items, (num_neg_samples,), device=device)
         else:
             negative_items[mask] = torch.randint(0, num_items, (num_neg_samples,), device=device)

@@ -56,7 +56,11 @@ class LossFunction:
         """
         Compute the Bayesian Personalized Ranking (BPR) loss.
         It encourages the model to rank positive edges higher than negative edges.
-        Formula: -log(sigmoid(pos_preds - neg_preds))
+        Formula: -log(sigmoid(pos_preds - neg_preds)) = softplus(neg_preds - pos_preds)
+
+        If there are multiple negative samples per positive sample, the loss is averaged over all negative samples for normalization.
+        Final loss is summed over all the averages.
+
         """
         EPS = 1e-15
 
@@ -64,13 +68,13 @@ class LossFunction:
         pos_preds = preds[pos_mask]
         neg_preds = preds[~pos_mask]
 
-        pos_preds_expanded = pos_preds.repeat(neg_preds.size(0) // pos_preds.size(0))
-
+        pos_preds = pos_preds.unsqueeze(1)
+        neg_preds = neg_preds.view(pos_preds.size(0), -1)
         # Compute the difference between positive and negative predictions
-        diff = pos_preds_expanded - neg_preds  # Shape: 
+        diff = pos_preds - neg_preds
 
         # Apply the BPR loss formula
-        loss = F.softplus(-diff).mean()  # -log(sigmoid(x)) = softplus(-x)
+        loss = F.softplus(-diff).mean(dim=1).sum()
         return loss
 
 
