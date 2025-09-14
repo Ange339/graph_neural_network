@@ -249,7 +249,10 @@ for epoch in trange(cfg['epochs'], desc="Training", unit="Epochs"):
         best_model_cfg["precision_at_k"] = val_metrics["precision_at_k"]
         best_model_cfg["recall_at_k"] = val_metrics["recall_at_k"]
 
-# Save the best model
+
+torch.save(model.state_dict(), OUT_DIR / "last_model.pth")
+
+# Save also the best model
 if cfg["save_model"]:
     torch.save(best_model_cfg["best_model"], OUT_DIR / "best_model.pth")
 
@@ -322,7 +325,13 @@ if cfg["tsne_visualization"]:
     # Load the best model for visualization
     model.load_state_dict(best_model_cfg["best_model"])
     user_embeddings, item_embeddings = get_embeddings(model)
-    tsne_transform(user_embeddings, title="t-SNE User Embeddings", filename=OUT_DIR / "tsne_user_embeddings.png")
-    tsne_transform(item_embeddings, title="t-SNE Item Embeddings", filename=OUT_DIR / "tsne_item_embeddings.png")
+    tsne_transform(user_embeddings, title="t-SNE User Embeddings", filename=OUT_DIR / "tsne_user_embeddings_best.png")
+    tsne_transform(item_embeddings, title="t-SNE Item Embeddings", filename=OUT_DIR / "tsne_item_embeddings_best.png")
+
+    # Load the last model for visualization
+    model.load_state_dict(torch.load(OUT_DIR / "last_model.pth"))
+    user_embeddings, item_embeddings = get_embeddings(model)
+    tsne_transform(user_embeddings, title="t-SNE User Embeddings", filename=OUT_DIR / "tsne_user_embeddings_last.png")
+    tsne_transform(item_embeddings, title="t-SNE Item Embeddings", filename=OUT_DIR / "tsne_item_embeddings_last.png")
 
 logger.info(f"Done")
